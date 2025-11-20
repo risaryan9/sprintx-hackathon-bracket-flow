@@ -58,7 +58,6 @@ const Navigation = () => {
 
   const sectionLinks = [
     { name: "Features", sectionId: "features" },
-    { name: "Host", sectionId: "testimonials" },
   ];
 
   return (
