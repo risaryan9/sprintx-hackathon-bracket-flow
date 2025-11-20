@@ -15,7 +15,14 @@ const queryClient = new QueryClient();
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated } = useAuth();
-  return isAuthenticated ? <>{children}</> : <Navigate to="/host/login" replace />;
+  
+  // Since auth state is initialized synchronously from localStorage,
+  // we can check immediately without a loading state
+  if (!isAuthenticated) {
+    return <Navigate to="/host/login" replace />;
+  }
+  
+  return <>{children}</>;
 };
 
 const App = () => (

@@ -13,15 +13,34 @@ const ORGANIZER_USERNAME = "Xthlete";
 const ORGANIZER_PASSWORD = "pass123";
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [organizerName, setOrganizerName] = useState<string | null>(null);
-
-  useEffect(() => {
+  // Initialize from localStorage synchronously to avoid race conditions
+  const getStoredAuth = () => {
+    if (typeof window === "undefined") return { isAuth: false, name: null };
     const stored = localStorage.getItem("organizer_auth");
     if (stored === ORGANIZER_USERNAME) {
-      setIsAuthenticated(true);
-      setOrganizerName(ORGANIZER_USERNAME);
+      return { isAuth: true, name: ORGANIZER_USERNAME };
     }
+    return { isAuth: false, name: null };
+  };
+
+  const initialAuth = getStoredAuth();
+  const [isAuthenticated, setIsAuthenticated] = useState(initialAuth.isAuth);
+  const [organizerName, setOrganizerName] = useState<string | null>(initialAuth.name);
+
+  // Sync with localStorage on mount and when it changes
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const auth = getStoredAuth();
+      setIsAuthenticated(auth.isAuth);
+      setOrganizerName(auth.name);
+    };
+
+    // Check on mount
+    handleStorageChange();
+
+    // Listen for storage changes (e.g., from other tabs)
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   const login = (username: string, password: string): boolean => {
