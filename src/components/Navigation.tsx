@@ -3,12 +3,22 @@ import { Command, Menu } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Navigation = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { isAuthenticated } = useAuth();
+
+  const handleHostClick = () => {
+    if (isAuthenticated) {
+      navigate("/host");
+    } else {
+      navigate("/host/login");
+    }
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -88,6 +98,13 @@ const Navigation = () => {
             >
               Tournaments
             </NavLink>
+            <button
+              type="button"
+              onClick={handleHostClick}
+              className="text-sm text-muted-foreground hover:text-foreground transition-all duration-300"
+            >
+              Host
+            </button>
             <Button 
               onClick={() => scrollToSection('cta')}
               size="sm"
@@ -131,6 +148,16 @@ const Navigation = () => {
                   >
                     Tournaments
                   </NavLink>
+                  <button
+                    type="button"
+                    className="text-lg text-muted-foreground hover:text-foreground transition-colors text-left"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      handleHostClick();
+                    }}
+                  >
+                    Host
+                  </button>
                   <Button 
                     onClick={() => {
                       setIsMobileMenuOpen(false);
