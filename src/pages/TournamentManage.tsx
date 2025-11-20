@@ -1,16 +1,21 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Users } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { getTournamentById, getTournamentEntriesCount } from "@/services/tournaments";
+import { generateFixtures } from "@/services/fixtures";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useToast } from "@/hooks/use-toast";
 
 const TournamentManage = () => {
   const { tournamentId } = useParams<{ tournamentId: string }>();
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: tournament, isLoading, isError } = useQuery({
     queryKey: ["tournament", tournamentId],
@@ -26,6 +31,42 @@ const TournamentManage = () => {
 
   const isMaxEntriesReached =
     tournament && entriesCount >= tournament.max_entries;
+
+  const generateFixturesMutation = useMutation({
+    mutationFn: () => generateFixtures(tournamentId || "", {}),
+    onSuccess: (result) => {
+      if (result.status === "ok") {
+        queryClient.invalidateQueries({ queryKey: ["tournament", tournamentId] });
+        queryClient.invalidateQueries({ queryKey: ["tournament-entries", tournamentId] });
+        toast({
+          title: "Success",
+          description: `Generated ${result.created} fixtures successfully!`,
+        });
+        if (result.warnings.length > 0) {
+          result.warnings.forEach((warning) => {
+            toast({
+              title: "Warning",
+              description: warning,
+              variant: "default",
+            });
+          });
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to generate fixtures",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate fixtures",
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <div className="min-h-screen bg-black text-foreground">
@@ -89,12 +130,37 @@ const TournamentManage = () => {
                     {isMaxEntriesReached && (
                       <Button
                         className="button-gradient w-full mt-4"
-                        onClick={() => {
-                          // Placeholder - button does nothing for now
-                        }}
+                        onClick={() => generateFixturesMutation.mutate()}
+                        disabled={generateFixturesMutation.isPending}
                       >
-                        Generate Fixtures
+                        {generateFixturesMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          "Generate Fixtures"
+                        )}
                       </Button>
+                    )}
+                    {generateFixturesMutation.data && generateFixturesMutation.data.status === "ok" && (
+                      <Alert className="mt-4 bg-green-500/10 border-green-500/20">
+                        <CheckCircle2 className="h-4 w-4 text-green-400" />
+                        <AlertTitle>Fixtures Generated</AlertTitle>
+                        <AlertDescription>
+                          Successfully created {generateFixturesMutation.data.created} match
+                          {generateFixturesMutation.data.created !== 1 ? "es" : ""}.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    {generateFixturesMutation.data && generateFixturesMutation.data.status === "error" && (
+                      <Alert variant="destructive" className="mt-4">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Error</AlertTitle>
+                        <AlertDescription>
+                          {generateFixturesMutation.data.error || "Failed to generate fixtures"}
+                        </AlertDescription>
+                      </Alert>
                     )}
                   </div>
                   <div className="rounded-xl border border-white/10 bg-black/30 p-6">
