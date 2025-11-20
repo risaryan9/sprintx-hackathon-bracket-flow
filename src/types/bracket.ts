@@ -15,6 +15,8 @@ export interface BracketMatch {
   status: string | null;
   winner_entry_id: string | null;
   is_completed: boolean | null;
+  match_code: string | null;
+  code_valid: boolean | null;
 }
 
 export interface Round {

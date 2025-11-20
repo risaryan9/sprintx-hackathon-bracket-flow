@@ -172,8 +172,84 @@ const assignCourtsAndUmpires = (
   }> = [];
 
   let courtIndex = 0;
-  let umpireIndex = 0;
   let waveStart = new Date(startTime);
+
+  // Track umpire assignments by time slot to prevent conflicts
+  // Map: timeSlotKey -> Set of umpire IDs already assigned at that time
+  const umpireSchedule = new Map<string, Set<string>>();
+  
+  // Track umpire assignment counts for even distribution
+  const umpireAssignmentCounts = new Map<string, number>();
+  umpires.forEach((u) => umpireAssignmentCounts.set(u.id, 0));
+
+  // Helper: Get time slot key for a given time
+  const getTimeSlotKey = (time: Date): string => {
+    return time.toISOString();
+  };
+
+  // Helper: Get available umpires at a given time
+  const getAvailableUmpires = (time: Date): Umpire[] => {
+    const timeKey = getTimeSlotKey(time);
+    const assignedUmpireIds = umpireSchedule.get(timeKey) || new Set<string>();
+    
+    return umpires.filter((u) => !assignedUmpireIds.has(u.id));
+  };
+
+  // Helper: Select best umpire (prioritize neutral, then least assigned)
+  const selectBestUmpire = (
+    availableUmpires: Umpire[],
+    match: { entry1_id: string | null; entry2_id: string | null },
+    entries: Entry[],
+    players: Player[],
+    respectNeutrality: boolean
+  ): Umpire | null => {
+    if (availableUmpires.length === 0) return null;
+    if (availableUmpires.length === 1) return availableUmpires[0];
+
+    // If respect_club_neutrality, try to find neutral umpire first
+    if (respectNeutrality && match.entry1_id && match.entry2_id) {
+      const entry1 = entries.find((e) => e.id === match.entry1_id);
+      const entry2 = entries.find((e) => e.id === match.entry2_id);
+      
+      if (entry1 && entry2) {
+        const player1Id = entry1.player_id;
+        const player2Id = entry2.player_id;
+        
+        if (player1Id && player2Id) {
+          const player1 = players.find((p) => p.id === player1Id);
+          const player2 = players.find((p) => p.id === player2Id);
+          const player1Club = player1?.club_id;
+          const player2Club = player2?.club_id;
+
+          if (player1Club || player2Club) {
+            // Find neutral umpires (not from either club)
+            const neutralUmpires = availableUmpires.filter(
+              (u) => u.club_id !== player1Club && u.club_id !== player2Club
+            );
+            
+            if (neutralUmpires.length > 0) {
+              availableUmpires = neutralUmpires;
+            }
+          }
+        }
+      }
+    }
+
+    // Among available (and potentially neutral) umpires, select the one with least assignments
+    // This ensures even distribution across all umpires
+    let bestUmpire = availableUmpires[0];
+    let minAssignments = umpireAssignmentCounts.get(bestUmpire.id) || 0;
+
+    for (const umpire of availableUmpires) {
+      const assignments = umpireAssignmentCounts.get(umpire.id) || 0;
+      if (assignments < minAssignments) {
+        bestUmpire = umpire;
+        minAssignments = assignments;
+      }
+    }
+
+    return bestUmpire;
+  };
 
   // Group matches by round
   const matchesByRound = new Map<string, typeof matches>();
@@ -192,35 +268,33 @@ const assignCourtsAndUmpires = (
       const waveMatches = roundMatches.slice(i, i + batchSize);
       const waveTime = new Date(waveStart);
       waveTime.setMinutes(waveTime.getMinutes() + waveIndex * slotDurationMinutes);
+      const timeKey = getTimeSlotKey(waveTime);
+
+      // Initialize time slot if needed
+      if (!umpireSchedule.has(timeKey)) {
+        umpireSchedule.set(timeKey, new Set<string>());
+      }
 
       waveMatches.forEach((match) => {
         const court = courts.length > 0 ? courts[courtIndex % courts.length] : null;
-        let umpire = umpires.length > 0 ? umpires[umpireIndex % umpires.length] : null;
+        
+        // Get available umpires at this time
+        const availableUmpires = getAvailableUmpires(waveTime);
+        
+        // Select best umpire (neutral if possible, then least assigned)
+        const umpire = selectBestUmpire(
+          availableUmpires,
+          match,
+          entries,
+          players,
+          respectClubNeutrality
+        );
 
-        // Try to find neutral umpire if respect_club_neutrality is true
-        if (respectClubNeutrality && match.entry1_id && match.entry2_id) {
-          const entry1 = entries.find((e) => e.id === match.entry1_id);
-          const entry2 = entries.find((e) => e.id === match.entry2_id);
-          
-          // Get player IDs from entries
-          const player1Id = entry1?.player_id;
-          const player2Id = entry2?.player_id;
-          
-          if (player1Id && player2Id) {
-            const player1 = players.find((p) => p.id === player1Id);
-            const player2 = players.find((p) => p.id === player2Id);
-            const player1Club = player1?.club_id;
-            const player2Club = player2?.club_id;
-
-            if (player1Club || player2Club) {
-              const neutralUmpire = umpires.find(
-                (u) => u.club_id !== player1Club && u.club_id !== player2Club
-              );
-              if (neutralUmpire) {
-                umpire = neutralUmpire;
-              }
-            }
-          }
+        // Assign umpire to this time slot
+        if (umpire) {
+          umpireSchedule.get(timeKey)!.add(umpire.id);
+          const currentCount = umpireAssignmentCounts.get(umpire.id) || 0;
+          umpireAssignmentCounts.set(umpire.id, currentCount + 1);
         }
 
         scheduled.push({
@@ -231,9 +305,6 @@ const assignCourtsAndUmpires = (
         });
 
         courtIndex++;
-        if (umpire) {
-          umpireIndex++;
-        }
       });
 
       waveIndex++;
