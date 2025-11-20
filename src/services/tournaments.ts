@@ -1,4 +1,5 @@
 import { Tournament, CreateTournamentInput } from "@/types/tournament";
+import { Entry } from "@/types/match";
 import { supabase } from "@/lib/supabaseClient";
 
 export const getTournaments = async (): Promise<Tournament[]> => {
@@ -71,6 +72,20 @@ export const getTournamentEntriesCount = async (tournamentId: string): Promise<n
   }
 
   return count ?? 0;
+};
+
+export const getTournamentEntries = async (tournamentId: string): Promise<Entry[]> => {
+  const { data, error } = await supabase
+    .from("entries")
+    .select("*")
+    .eq("tournament_id", tournamentId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as Entry[] | null) ?? [];
 };
 
 

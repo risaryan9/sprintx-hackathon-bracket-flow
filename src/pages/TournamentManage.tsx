@@ -1,15 +1,17 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
-import { getTournamentById, getTournamentEntriesCount } from "@/services/tournaments";
+import { getTournamentById, getTournamentEntriesCount, getTournamentEntries } from "@/services/tournaments";
 import { generateFixtures } from "@/services/fixtures";
+import { Entry } from "@/types/match";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
 
 const TournamentManage = () => {
   const { tournamentId } = useParams<{ tournamentId: string }>();
@@ -24,8 +26,14 @@ const TournamentManage = () => {
   });
 
   const { data: entriesCount = 0, isLoading: isLoadingEntries } = useQuery({
-    queryKey: ["tournament-entries", tournamentId],
+    queryKey: ["tournament-entries-count", tournamentId],
     queryFn: () => getTournamentEntriesCount(tournamentId || ""),
+    enabled: !!tournamentId,
+  });
+
+  const { data: entries = [], isLoading: isLoadingEntriesList } = useQuery({
+    queryKey: ["tournament-entries", tournamentId],
+    queryFn: () => getTournamentEntries(tournamentId || ""),
     enabled: !!tournamentId,
   });
 
@@ -38,6 +46,7 @@ const TournamentManage = () => {
       if (result.status === "ok") {
         queryClient.invalidateQueries({ queryKey: ["tournament", tournamentId] });
         queryClient.invalidateQueries({ queryKey: ["tournament-entries", tournamentId] });
+        queryClient.invalidateQueries({ queryKey: ["tournament-entries-count", tournamentId] });
         toast({
           title: "Success",
           description: `Generated ${result.created} fixtures successfully!`,
@@ -107,7 +116,7 @@ const TournamentManage = () => {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="rounded-xl border border-white/10 bg-black/30 p-6">
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-3">
                         <Users className="h-5 w-5 text-primary" />
                         <div>
@@ -127,22 +136,94 @@ const TournamentManage = () => {
                         </Badge>
                       )}
                     </div>
-                    {isMaxEntriesReached && (
-                      <Button
-                        className="button-gradient w-full mt-4"
-                        onClick={() => generateFixturesMutation.mutate()}
-                        disabled={generateFixturesMutation.isPending}
-                      >
-                        {generateFixturesMutation.isPending ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Generating...
-                          </>
-                        ) : (
-                          "Generate Fixtures"
-                        )}
-                      </Button>
-                    )}
+
+                    {/* Entries List */}
+                    <div className="mb-6">
+                      <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
+                        Entry Details
+                      </h3>
+                      {isLoadingEntriesList ? (
+                        <div className="flex justify-center py-8">
+                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        </div>
+                      ) : entries.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">
+                          No entries yet
+                        </p>
+                      ) : (
+                        <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-2">
+                          {entries.map((entry, index) => (
+                            <div
+                              key={entry.id}
+                              className="flex items-center justify-between p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
+                            >
+                              <div className="flex items-center gap-3 flex-1">
+                                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary text-sm font-semibold">
+                                  {index + 1}
+                                </div>
+                                <div className="flex-1">
+                                  {entry.player_id ? (
+                                    <div className="flex items-center gap-2">
+                                      <User className="h-4 w-4 text-muted-foreground" />
+                                      <span className="text-sm font-medium">
+                                        Player: {entry.player_id.slice(0, 8)}...
+                                      </span>
+                                    </div>
+                                  ) : entry.team_id ? (
+                                    <div className="flex items-center gap-2">
+                                      <Users2 className="h-4 w-4 text-muted-foreground" />
+                                      <span className="text-sm font-medium">
+                                        Team: {entry.team_id.slice(0, 8)}...
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-sm text-muted-foreground">
+                                      Entry #{index + 1}
+                                    </span>
+                                  )}
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    Registered: {format(new Date(entry.created_at), "MMM d, yyyy HH:mm")}
+                                  </p>
+                                </div>
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className="text-xs border-white/10"
+                              >
+                                {entry.status || "Active"}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Generate Fixtures Button */}
+                    <Button
+                      className={`w-full ${
+                        isMaxEntriesReached
+                          ? "button-gradient"
+                          : "bg-gray-600/50 text-gray-400 cursor-not-allowed hover:bg-gray-600/50"
+                      }`}
+                      onClick={() => generateFixturesMutation.mutate()}
+                      disabled={!isMaxEntriesReached || generateFixturesMutation.isPending}
+                    >
+                      {generateFixturesMutation.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          Generate Fixtures
+                          {!isMaxEntriesReached && (
+                            <span className="ml-2 text-xs">
+                              ({tournament.max_entries - entriesCount} more needed)
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </Button>
                     {generateFixturesMutation.data && generateFixturesMutation.data.status === "ok" && (
                       <Alert className="mt-4 bg-green-500/10 border-green-500/20">
                         <CheckCircle2 className="h-4 w-4 text-green-400" />
