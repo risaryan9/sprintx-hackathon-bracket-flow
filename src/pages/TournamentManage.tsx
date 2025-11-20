@@ -1,11 +1,12 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Users } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
-import { getTournamentById } from "@/services/tournaments";
+import { getTournamentById, getTournamentEntriesCount } from "@/services/tournaments";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 const TournamentManage = () => {
   const { tournamentId } = useParams<{ tournamentId: string }>();
@@ -16,6 +17,15 @@ const TournamentManage = () => {
     queryFn: () => getTournamentById(tournamentId || ""),
     enabled: !!tournamentId,
   });
+
+  const { data: entriesCount = 0, isLoading: isLoadingEntries } = useQuery({
+    queryKey: ["tournament-entries", tournamentId],
+    queryFn: () => getTournamentEntriesCount(tournamentId || ""),
+    enabled: !!tournamentId,
+  });
+
+  const isMaxEntriesReached =
+    tournament && entriesCount >= tournament.max_entries;
 
   return (
     <div className="min-h-screen bg-black text-foreground">
@@ -55,6 +65,38 @@ const TournamentManage = () => {
                   <CardTitle className="text-3xl">{tournament.name}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  <div className="rounded-xl border border-white/10 bg-black/30 p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <Users className="h-5 w-5 text-primary" />
+                        <div>
+                          <p className="text-sm text-muted-foreground">Entries</p>
+                          {isLoadingEntries ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-primary mt-1" />
+                          ) : (
+                            <p className="text-2xl font-semibold">
+                              {entriesCount} / {tournament.max_entries}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {isMaxEntriesReached && (
+                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                          Full
+                        </Badge>
+                      )}
+                    </div>
+                    {isMaxEntriesReached && (
+                      <Button
+                        className="button-gradient w-full mt-4"
+                        onClick={() => {
+                          // Placeholder - button does nothing for now
+                        }}
+                      >
+                        Generate Fixtures
+                      </Button>
+                    )}
+                  </div>
                   <div className="rounded-xl border border-white/10 bg-black/30 p-6">
                     <p className="text-lg text-muted-foreground">
                       Detailed tournament management dashboards for fixtures, schedules, and

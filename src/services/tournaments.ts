@@ -60,4 +60,17 @@ export const getTournamentById = async (id: string): Promise<Tournament | null> 
   return data as Tournament;
 };
 
+export const getTournamentEntriesCount = async (tournamentId: string): Promise<number> => {
+  const { count, error } = await supabase
+    .from("entries")
+    .select("*", { count: "exact", head: true })
+    .eq("tournament_id", tournamentId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return count ?? 0;
+};
+
 
