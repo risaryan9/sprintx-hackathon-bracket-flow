@@ -4,9 +4,10 @@ import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2 } fr
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { getTournamentById, getTournamentEntriesCount, getTournamentEntries } from "@/services/tournaments";
-import { generateFixtures } from "@/services/fixtures";
+import { generateFixtures, generateNextRoundFixtures } from "@/services/fixtures";
 import { getTournamentMatchesForBracket } from "@/services/bracket";
 import { MatchList } from "@/components/MatchList";
+import { getCurrentRound, areAllMatchesCompleted } from "@/services/matches";
 import { Entry } from "@/types/match";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,9 +47,30 @@ const TournamentManage = () => {
     retry: 1,
   });
 
+  // Check current round and if all matches are completed (for knockout)
+  const { data: currentRound, isLoading: isLoadingRound } = useQuery({
+    queryKey: ["tournament-current-round", tournamentId],
+    queryFn: () => getCurrentRound(tournamentId || ""),
+    enabled: !!tournamentId && !!tournament && tournament.format === "knockouts",
+  });
+
+  const { data: canGenerateNextRound, isLoading: isLoadingCanGenerate } = useQuery({
+    queryKey: ["tournament-can-generate-next", tournamentId, currentRound],
+    queryFn: async () => {
+      if (!tournamentId || !currentRound) return false;
+      try {
+        return await areAllMatchesCompleted(tournamentId, currentRound);
+      } catch {
+        return false;
+      }
+    },
+    enabled: !!tournamentId && !!currentRound && !!tournament && tournament.format === "knockouts",
+  });
+
   const isMaxEntriesReached =
     tournament && entriesCount >= tournament.max_entries;
   const hasMatches = matches.length > 0;
+  const isKnockout = tournament?.format === "knockouts";
 
   const generateFixturesMutation = useMutation({
     mutationFn: () => generateFixtures(tournamentId || "", {}),
@@ -58,6 +80,8 @@ const TournamentManage = () => {
         queryClient.invalidateQueries({ queryKey: ["tournament-entries", tournamentId] });
         queryClient.invalidateQueries({ queryKey: ["tournament-entries-count", tournamentId] });
         queryClient.invalidateQueries({ queryKey: ["tournament-matches", tournamentId] });
+        queryClient.invalidateQueries({ queryKey: ["tournament-current-round", tournamentId] });
+        queryClient.invalidateQueries({ queryKey: ["tournament-can-generate-next", tournamentId] });
         toast({
           title: "Success",
           description: `Generated ${result.created} fixtures successfully!`,
@@ -83,6 +107,47 @@ const TournamentManage = () => {
       toast({
         title: "Error",
         description: error.message || "Failed to generate fixtures",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const generateNextRoundMutation = useMutation({
+    mutationFn: () => {
+      if (!currentRound) throw new Error("No current round found");
+      return generateNextRoundFixtures(tournamentId || "", currentRound, {});
+    },
+    onSuccess: (result) => {
+      if (result.status === "ok") {
+        queryClient.invalidateQueries({ queryKey: ["tournament", tournamentId] });
+        queryClient.invalidateQueries({ queryKey: ["tournament-matches", tournamentId] });
+        queryClient.invalidateQueries({ queryKey: ["tournament-current-round", tournamentId] });
+        queryClient.invalidateQueries({ queryKey: ["tournament-can-generate-next", tournamentId] });
+        toast({
+          title: "Success",
+          description: `Generated ${result.created} next round fixtures successfully!`,
+        });
+        if (result.warnings.length > 0) {
+          result.warnings.forEach((warning) => {
+            toast({
+              title: "Warning",
+              description: warning,
+              variant: "default",
+            });
+          });
+        }
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Failed to generate next round fixtures",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate next round fixtures",
         variant: "destructive",
       });
     },
@@ -271,10 +336,56 @@ const TournamentManage = () => {
         {hasMatches && (
           <section className="w-full py-8">
             <div className="max-w-4xl mx-auto px-4 mb-8">
-              <h3 className="text-2xl font-semibold mb-2">Match Fixtures</h3>
-              <p className="text-sm text-muted-foreground">
-                All scheduled matches for this tournament
-              </p>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-2xl font-semibold mb-2">Match Fixtures</h3>
+                  <p className="text-sm text-muted-foreground">
+                    All scheduled matches for this tournament
+                  </p>
+                </div>
+                {isKnockout && currentRound && (
+                  <Button
+                    className={`${
+                      canGenerateNextRound
+                        ? "button-gradient"
+                        : "bg-gray-600/50 text-gray-400 cursor-not-allowed hover:bg-gray-600/50"
+                    }`}
+                    onClick={() => generateNextRoundMutation.mutate()}
+                    disabled={
+                      !canGenerateNextRound ||
+                      generateNextRoundMutation.isPending ||
+                      isLoadingCanGenerate ||
+                      isLoadingRound
+                    }
+                  >
+                    {generateNextRoundMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        Generate Next Round
+                        {currentRound && (
+                          <span className="ml-2 text-xs">
+                            ({currentRound})
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+              {isKnockout && currentRound && (
+                <div className="mb-4 text-sm text-muted-foreground">
+                  Current Round: <span className="text-foreground font-medium">{currentRound}</span>
+                  {canGenerateNextRound === false && (
+                    <span className="ml-2 text-yellow-400">
+                      (Complete all matches to generate next round)
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             {isLoadingMatches ? (
               <div className="flex justify-center py-12">
@@ -293,7 +404,11 @@ const TournamentManage = () => {
                 </Button>
               </div>
             ) : (
-              <MatchList matches={matches} />
+              <MatchList 
+                matches={matches} 
+                tournamentId={tournamentId || ""} 
+                currentRound={currentRound || null}
+              />
             )}
           </section>
         )}

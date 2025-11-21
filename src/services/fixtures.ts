@@ -690,3 +690,606 @@ export const generateFixtures = async (
   }
 };
 
+/**
+ * Generate next round fixtures for knockout tournament
+ */
+export const generateNextRoundFixtures = async (
+  tournamentId: string,
+  currentRound: string,
+  options: GenerateFixturesOptions = {}
+): Promise<GenerateFixturesResult> => {
+  const {
+    respect_club_neutrality = true,
+    dry_run = false,
+  } = options;
+
+  try {
+    // 1. Fetch tournament
+    const { data: tournament, error: tournamentError } = await supabase
+      .from("tournaments")
+      .select("*")
+      .eq("id", tournamentId)
+      .single();
+
+    if (tournamentError || !tournament) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: `Tournament not found: ${tournamentError?.message || "Unknown error"}`,
+      };
+    }
+
+    // Only allow for knockout format
+    if (tournament.format !== "knockouts") {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: "Next round fixtures can only be generated for knockout tournaments.",
+      };
+    }
+
+    // 2. Get all matches from current round and verify all have winners
+    const { data: allMatches, error: allMatchesError } = await supabase
+      .from("matches")
+      .select("id, is_completed, winner_entry_id")
+      .eq("tournament_id", tournamentId)
+      .eq("round", currentRound);
+
+    if (allMatchesError) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: `Failed to check match completion: ${allMatchesError.message}`,
+      };
+    }
+
+    if (!allMatches || allMatches.length === 0) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: "No matches found in the current round.",
+      };
+    }
+
+    // Verify all matches are completed AND have winners
+    const allCompleted = allMatches.every((match) => match.is_completed === true);
+    if (!allCompleted) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: "All matches in the current round must be completed before generating the next round.",
+      };
+    }
+
+    // Get winners - all matches should have winners if completed
+    const winnerIds = allMatches
+      .map((match) => match.winner_entry_id)
+      .filter((id): id is string => id !== null);
+
+    if (winnerIds.length === 0) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: "No winners found in the current round. All matches must have winners assigned.",
+      };
+    }
+
+    // Critical: Ensure all matches have winners (not just some)
+    if (winnerIds.length !== allMatches.length) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: `Only ${winnerIds.length} out of ${allMatches.length} matches have winners. All matches must have winners before generating the next round.`,
+      };
+    }
+
+    // 4. Determine next round name
+    const currentRoundSize = winnerIds.length;
+    
+    // Explicit validation: Ensure we have a valid number of winners
+    if (currentRoundSize < 1) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: "No winners found. Cannot generate next round.",
+      };
+    }
+    
+    // If we have exactly 2 winners, the next round is always "Final"
+    let nextRoundName: string;
+    
+    if (currentRoundSize === 2) {
+      // Check if Final already exists AND is completed
+      const { data: finalMatches, error: finalCheckError } = await supabase
+        .from("matches")
+        .select("id, is_completed")
+        .eq("tournament_id", tournamentId)
+        .eq("round", "Final");
+
+      if (finalCheckError) {
+        return {
+          status: "error",
+          created: 0,
+          matches: [],
+          warnings: [],
+          error: `Failed to check for existing Final: ${finalCheckError.message}`,
+        };
+      }
+
+      // If Final exists, check its status
+      if (finalMatches && finalMatches.length > 0) {
+        // Check if any Final match has a winner (is completed)
+        const { data: finalWithWinner, error: winnerCheckError } = await supabase
+          .from("matches")
+          .select("id, is_completed, winner_entry_id")
+          .eq("tournament_id", tournamentId)
+          .eq("round", "Final");
+
+        if (winnerCheckError) {
+          return {
+            status: "error",
+            created: 0,
+            matches: [],
+            warnings: [],
+            error: `Failed to check Final status: ${winnerCheckError.message}`,
+          };
+        }
+
+        // If any Final has a winner, tournament is complete
+        const hasWinner = finalWithWinner?.some(
+          (match) => match.winner_entry_id !== null && match.is_completed === true
+        );
+
+        if (hasWinner) {
+          return {
+            status: "error",
+            created: 0,
+            matches: [],
+            warnings: [],
+            error: "Tournament is already complete. Final has already been played and a winner declared.",
+          };
+        }
+
+        // Final exists but has no winner - delete it so we can create a new one with correct winners
+        const { error: deleteFinalError } = await supabase
+          .from("matches")
+          .delete()
+          .eq("tournament_id", tournamentId)
+          .eq("round", "Final")
+          .is("winner_entry_id", null);
+
+        if (deleteFinalError) {
+          return {
+            status: "error",
+            created: 0,
+            matches: [],
+            warnings: [],
+            error: `Failed to delete incomplete Final: ${deleteFinalError.message}`,
+          };
+        }
+      }
+
+      // No Final exists (or we just deleted incomplete one) - proceed to create it
+      nextRoundName = "Final";
+    } else {
+      // Determine next round directly based on number of winners
+      // This is more reliable than trying to calculate indices
+      let determinedRoundName: string | null = null;
+
+      // Map number of winners to the next round name
+      // When we have X winners, the next round will have X players
+      // IMPORTANT: This must follow the exact progression:
+      // Round of 16 (16 players) → 8 winners → Quarterfinals
+      // Quarterfinals (8 players) → 4 winners → Semifinals  
+      // Semifinals (4 players) → 2 winners → Final
+      switch (currentRoundSize) {
+        case 8:
+          // 8 winners from Round of 16 → Next: Quarterfinals (8 players, 4 matches)
+          // This MUST be Quarterfinals, never skip to Semifinals
+          determinedRoundName = "Quarterfinals";
+          break;
+        case 4:
+          // 4 winners from Quarterfinals → Next: Semifinals (4 players, 2 matches)
+          determinedRoundName = "Semifinals";
+          break;
+        case 2:
+          // 2 winners from Semifinals → Next: Final (handled above in special case, but keep here for safety)
+          determinedRoundName = "Final";
+          break;
+        default:
+          // For other sizes, determine next round directly based on winner count
+          // The pattern: X winners → Next round with X players
+          if (currentRoundSize >= 32) {
+            // 32+ winners → Round of [next size]
+            determinedRoundName = `Round of ${currentRoundSize}`;
+          } else if (currentRoundSize === 16) {
+            // 16 winners → Round of 16 (shouldn't happen, but handle it)
+            determinedRoundName = "Round of 16";
+          } else {
+            // For other sizes, use a more direct approach
+            // Calculate what the next round should be based on number of players
+            const nextRoundPlayerCount = currentRoundSize; // Next round has same number of players as current winners
+            
+            if (nextRoundPlayerCount === 8) {
+              determinedRoundName = "Quarterfinals";
+            } else if (nextRoundPlayerCount === 4) {
+              determinedRoundName = "Semifinals";
+            } else if (nextRoundPlayerCount === 2) {
+              determinedRoundName = "Final";
+            } else if (nextRoundPlayerCount >= 32) {
+              determinedRoundName = `Round of ${nextRoundPlayerCount}`;
+            } else if (nextRoundPlayerCount === 16) {
+              determinedRoundName = "Round of 16";
+            } else {
+              // Fallback: calculate based on bracket structure
+              const { data: firstRoundMatches, error: firstRoundError } = await supabase
+                .from("matches")
+                .select("round")
+                .eq("tournament_id", tournamentId)
+                .order("match_order", { ascending: true })
+                .limit(1);
+
+              if (firstRoundError || !firstRoundMatches || firstRoundMatches.length === 0) {
+                return {
+                  status: "error",
+                  created: 0,
+                  matches: [],
+                  warnings: [],
+                  error: `Failed to fetch first round: ${firstRoundError?.message || "No matches found"}`,
+                };
+              }
+
+              const firstRound = firstRoundMatches[0].round;
+              const { data: firstRoundData, error: firstRoundCountError } = await supabase
+                .from("matches")
+                .select("id")
+                .eq("tournament_id", tournamentId)
+                .eq("round", firstRound);
+
+              if (firstRoundCountError || !firstRoundData) {
+                return {
+                  status: "error",
+                  created: 0,
+                  matches: [],
+                  warnings: [],
+                  error: `Failed to count first round matches: ${firstRoundCountError?.message}`,
+                };
+              }
+
+              const originalBracketSize = firstRoundData.length * 2;
+              const adjustedBracketSize = nextPowerOfTwo(originalBracketSize);
+              const totalRounds = Math.log2(adjustedBracketSize);
+              
+              // Find the round index that matches current round size
+              let currentRoundIndex = -1;
+              for (let i = 0; i < totalRounds; i++) {
+                const roundSize = Math.pow(2, totalRounds - i);
+                if (roundSize === currentRoundSize) {
+                  currentRoundIndex = i;
+                  break;
+                }
+              }
+
+              if (currentRoundIndex === -1 || currentRoundIndex === totalRounds - 1) {
+                if (currentRound === "Final") {
+                  return {
+                    status: "error",
+                    created: 0,
+                    matches: [],
+                    warnings: [],
+                    error: "Tournament is already complete. No next round available.",
+                  };
+                }
+                currentRoundIndex = Math.floor(Math.log2(adjustedBracketSize / currentRoundSize));
+              }
+
+              const nextRoundIndex = currentRoundIndex + 1;
+              if (nextRoundIndex >= totalRounds) {
+                return {
+                  status: "error",
+                  created: 0,
+                  matches: [],
+                  warnings: [],
+                  error: "Tournament is already complete. No next round available.",
+                };
+              }
+
+              determinedRoundName = getKnockoutsRoundName(nextRoundIndex, totalRounds);
+            }
+          }
+          break;
+      }
+
+      if (!determinedRoundName) {
+        return {
+          status: "error",
+          created: 0,
+          matches: [],
+          warnings: [],
+          error: `Could not determine next round for ${currentRoundSize} winners.`,
+        };
+      }
+
+      nextRoundName = determinedRoundName;
+    }
+
+    // 5. Check if next round already exists (only if not handled above)
+    // Skip this check for Final if we already checked/deleted it in the 2-winners case
+    if (!(currentRoundSize === 2 && nextRoundName === "Final")) {
+      const { data: existingNextRound, error: existingError } = await supabase
+        .from("matches")
+        .select("id, is_completed, winner_entry_id")
+        .eq("tournament_id", tournamentId)
+        .eq("round", nextRoundName);
+
+      if (existingError) {
+        return {
+          status: "error",
+          created: 0,
+          matches: [],
+          warnings: [],
+          error: `Failed to check existing next round: ${existingError.message}`,
+        };
+      }
+
+      if (existingNextRound && existingNextRound.length > 0) {
+        // Check if the round is completed (all matches have winners)
+        const isCompleted = existingNextRound.every(
+          (match) => match.is_completed === true && match.winner_entry_id !== null
+        );
+        if (isCompleted) {
+          return {
+            status: "error",
+            created: 0,
+            matches: [],
+            warnings: [],
+            error: `Round (${nextRoundName}) already exists and is completed.`,
+          };
+        }
+        // Round exists but not completed - delete incomplete matches and regenerate
+        const { error: deleteIncompleteError } = await supabase
+          .from("matches")
+          .delete()
+          .eq("tournament_id", tournamentId)
+          .eq("round", nextRoundName)
+          .is("winner_entry_id", null);
+
+        if (deleteIncompleteError) {
+          return {
+            status: "error",
+            created: 0,
+            matches: [],
+            warnings: [],
+            error: `Failed to delete incomplete round matches: ${deleteIncompleteError.message}`,
+          };
+        }
+      }
+    }
+
+    // 6. Generate pairings for next round
+    const pairs = generateKnockoutsPairings(winnerIds, false);
+    const pairings = pairs.map((pair) => ({
+      ...pair,
+      round: nextRoundName,
+    }));
+
+    // 7. Fetch courts and umpires
+    const { data: courts, error: courtsError } = await supabase
+      .from("courts")
+      .select("*")
+      .eq("tournament_id", tournamentId);
+
+    if (courtsError) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: `Failed to fetch courts: ${courtsError.message}`,
+      };
+    }
+
+    if (!courts || courts.length === 0) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: "No courts available for this tournament.",
+      };
+    }
+
+    const { data: umpires, error: umpiresError } = await supabase
+      .from("umpires")
+      .select("*");
+
+    if (umpiresError) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: `Failed to fetch umpires: ${umpiresError.message}`,
+      };
+    }
+
+    if (!umpires || umpires.length === 0) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: "No umpires available.",
+      };
+    }
+
+    // 8. Fetch entries and players for club neutrality
+    const { data: entries, error: entriesError } = await supabase
+      .from("entries")
+      .select("*")
+      .in("id", winnerIds);
+
+    if (entriesError) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: `Failed to fetch entries: ${entriesError.message}`,
+      };
+    }
+
+    const playerIds = (entries || [])
+      .map((e) => e.player_id)
+      .filter((id): id is string => id !== null);
+
+    let players: Player[] = [];
+    if (playerIds.length > 0) {
+      const { data: playersData, error: playersError } = await supabase
+        .from("players")
+        .select("*")
+        .in("id", playerIds);
+
+      if (!playersError && playersData) {
+        players = playersData as Player[];
+      }
+    }
+
+    // 9. Calculate scheduling parameters
+    const batchSize = Math.min(courts.length, umpires.length);
+    const slotDurationMinutes =
+      tournament.match_duration_minutes + tournament.rest_time_minutes;
+
+    // Get the latest scheduled time from current round to start next round
+    const { data: latestMatch, error: latestError } = await supabase
+      .from("matches")
+      .select("scheduled_time")
+      .eq("tournament_id", tournamentId)
+      .eq("round", currentRound)
+      .order("scheduled_time", { ascending: false })
+      .limit(1)
+      .single();
+
+    let startTime: Date;
+    if (latestMatch && latestMatch.scheduled_time) {
+      startTime = new Date(latestMatch.scheduled_time);
+      // Start next round after a break (e.g., next day or same day evening)
+      startTime.setMinutes(startTime.getMinutes() + slotDurationMinutes);
+    } else {
+      startTime = new Date(tournament.start_date);
+      startTime.setHours(9, 0, 0, 0);
+    }
+
+    // 10. Assign courts and umpires
+    const scheduledMatches = assignCourtsAndUmpires(
+      pairings,
+      courts as Court[],
+      umpires as Umpire[],
+      entries as Entry[],
+      players,
+      startTime,
+      slotDurationMinutes,
+      batchSize,
+      respect_club_neutrality
+    );
+
+    // 11. Get highest match_order to continue numbering
+    const { data: maxMatchOrder, error: maxOrderError } = await supabase
+      .from("matches")
+      .select("match_order")
+      .eq("tournament_id", tournamentId)
+      .order("match_order", { ascending: false })
+      .limit(1)
+      .single();
+
+    let nextMatchOrder = 1;
+    if (!maxOrderError && maxMatchOrder && maxMatchOrder.match_order) {
+      nextMatchOrder = (maxMatchOrder.match_order as number) + 1;
+    }
+
+    // 12. Prepare match records
+    const matchRecords = scheduledMatches.map((match, index) => {
+      const matchCode = generateMatchCode(tournamentId, nextMatchOrder + index);
+
+      const scheduledTimeStr = match.scheduled_time
+        .toISOString()
+        .replace("T", " ")
+        .slice(0, 19);
+
+      return {
+        tournament_id: tournamentId,
+        round: match.round,
+        match_order: nextMatchOrder + index,
+        entry1_id: match.entry1_id,
+        entry2_id: match.entry2_id,
+        court_id: match.court_id,
+        umpire_id: match.umpire_id,
+        scheduled_time: scheduledTimeStr,
+        duration_minutes: tournament.match_duration_minutes,
+        rest_enforced: tournament.rest_time_minutes > 0,
+        match_code: matchCode,
+        code_valid: true,
+        winner_entry_id: null,
+        is_completed: false,
+      };
+    });
+
+    // 13. Dry run check
+    if (dry_run) {
+      return {
+        status: "ok",
+        created: 0,
+        matches: matchRecords as Match[],
+        warnings: ["Dry run: No matches were inserted."],
+      };
+    }
+
+    // 14. Insert matches
+    const { data: insertedMatches, error: insertError } = await supabase
+      .from("matches")
+      .insert(matchRecords)
+      .select();
+
+    if (insertError) {
+      return {
+        status: "error",
+        created: 0,
+        matches: [],
+        warnings: [],
+        error: `Failed to insert matches: ${insertError.message}`,
+      };
+    }
+
+    return {
+      status: "ok",
+      created: insertedMatches?.length || 0,
+      matches: (insertedMatches as Match[]) || [],
+      warnings: [],
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      created: 0,
+      matches: [],
+      warnings: [],
+      error: error instanceof Error ? error.message : "Unknown error occurred",
+    };
+  }
+};
+
