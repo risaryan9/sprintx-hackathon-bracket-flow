@@ -4,6 +4,8 @@ import { getTournamentEntriesCount } from "./tournaments";
 
 export interface IndividualRegistrationPayload {
   playerName: string;
+  dob: string;
+  gender: string;
   contactNumber: string;
   email: string;
   collegeOrClub?: string;
@@ -13,6 +15,8 @@ export interface IndividualRegistrationPayload {
 export interface TeamRegistrationPayload {
   teamName: string;
   captainName: string;
+  captainDob: string;
+  captainGender: string;
   contactNumber: string;
   email: string;
   playerNames: string[];
@@ -62,8 +66,8 @@ export const registerIndividualEntry = async (
       payload.age ? `Age: ${payload.age}` : null,
     ]),
     club_id: null,
-    dob: null,
-    gender: null,
+    dob: payload.dob ? payload.dob : null,
+    gender: payload.gender || null,
   };
 
   const { data: player, error: playerError } = await supabase
@@ -145,8 +149,8 @@ export const registerTeamEntry = async (
     full_name: name,
     contact: index === 0 ? contactString : null,
     club_id: null,
-    dob: null,
-    gender: null,
+    dob: index === 0 && payload.captainDob ? payload.captainDob : null,
+    gender: index === 0 ? payload.captainGender || null : null,
   }));
 
   const { data: players, error: playersError } = await supabase

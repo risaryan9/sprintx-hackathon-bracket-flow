@@ -54,6 +54,8 @@ interface TournamentRegistrationModalProps {
 
 interface IndividualFormData {
   playerName: string;
+  dob: string;
+  gender: string;
   age: string;
   contactNumber: string;
   email: string;
@@ -63,6 +65,8 @@ interface IndividualFormData {
 interface TeamFormData {
   teamName: string;
   captainName: string;
+  captainDob: string;
+  captainGender: string;
   contactNumber: string;
   email: string;
   numberOfPlayers: number;
@@ -88,6 +92,8 @@ export const TournamentRegistrationModal = ({
   const [isTeamBased, setIsTeamBased] = useState(false);
   const [individualData, setIndividualData] = useState<IndividualFormData>({
     playerName: "",
+    dob: "",
+    gender: "",
     age: "",
     contactNumber: "",
     email: "",
@@ -96,6 +102,8 @@ export const TournamentRegistrationModal = ({
   const [teamData, setTeamData] = useState<TeamFormData>({
     teamName: "",
     captainName: "",
+    captainDob: "",
+    captainGender: "",
     contactNumber: "",
     email: "",
     numberOfPlayers: 1,
@@ -113,6 +121,8 @@ export const TournamentRegistrationModal = ({
       // Reset form when tournament changes
       setIndividualData({
         playerName: "",
+        dob: "",
+        gender: "",
         age: "",
         contactNumber: "",
         email: "",
@@ -121,6 +131,8 @@ export const TournamentRegistrationModal = ({
       setTeamData({
         teamName: "",
         captainName: "",
+        captainDob: "",
+        captainGender: "",
         contactNumber: "",
         email: "",
         numberOfPlayers: 1,
@@ -240,6 +252,8 @@ export const TournamentRegistrationModal = ({
     if (isTeamBased) {
       if (!teamData.teamName.trim()) newErrors.teamName = "Team name is required";
       if (!teamData.captainName.trim()) newErrors.captainName = "Captain name is required";
+      if (!teamData.captainDob.trim()) newErrors.captainDob = "Captain DOB is required";
+      if (!teamData.captainGender.trim()) newErrors.captainGender = "Captain gender is required";
       if (!teamData.contactNumber.trim()) newErrors.contactNumber = "Contact number is required";
       if (!teamData.email.trim()) newErrors.email = "Email is required";
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(teamData.email)) {
@@ -258,6 +272,8 @@ export const TournamentRegistrationModal = ({
       });
     } else {
       if (!individualData.playerName.trim()) newErrors.playerName = "Player name is required";
+      if (!individualData.dob.trim()) newErrors.dob = "Date of birth is required";
+      if (!individualData.gender.trim()) newErrors.gender = "Gender is required";
       if (!individualData.contactNumber.trim()) newErrors.contactNumber = "Contact number is required";
       if (!individualData.email.trim()) newErrors.email = "Email is required";
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(individualData.email)) {
@@ -397,6 +413,8 @@ export const TournamentRegistrationModal = ({
         result = await registerTeamEntry(tournament, {
           teamName: teamData.teamName,
           captainName: teamData.captainName,
+          captainDob: teamData.captainDob,
+          captainGender: teamData.captainGender,
           contactNumber: teamData.contactNumber,
           email: teamData.email,
           playerNames: teamData.players,
@@ -405,6 +423,8 @@ export const TournamentRegistrationModal = ({
       } else {
         result = await registerIndividualEntry(tournament, {
           playerName: individualData.playerName,
+          dob: individualData.dob,
+          gender: individualData.gender,
           contactNumber: individualData.contactNumber,
           email: individualData.email,
           collegeOrClub: individualData.collegeClub,
@@ -436,7 +456,17 @@ export const TournamentRegistrationModal = ({
   if (!tournament) return null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      modal={!isPaying}
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && isPaying) {
+          // Prevent closing while Razorpay modal is active
+          return;
+        }
+        onOpenChange(nextOpen);
+      }}
+    >
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-[#0C0C0C] border-white/10 custom-scrollbar">
         <DialogHeader>
           <DialogTitle className="text-2xl">{tournament.name}</DialogTitle>
@@ -571,6 +601,45 @@ export const TournamentRegistrationModal = ({
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
+                    <Label htmlFor="captainDob" className="text-sm">
+                      Captain Date of Birth <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="captainDob"
+                      type="date"
+                      value={teamData.captainDob}
+                      onChange={(e) => handleTeamChange("captainDob", e.target.value)}
+                      className="bg-black/40 border-white/10"
+                      disabled={isTournamentFull || isSubmitting}
+                    />
+                    {errors.captainDob && (
+                      <p className="text-xs text-destructive">{errors.captainDob}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="captainGender" className="text-sm">
+                      Captain Gender <span className="text-destructive">*</span>
+                    </Label>
+                    <select
+                      id="captainGender"
+                      value={teamData.captainGender}
+                      onChange={(e) => handleTeamChange("captainGender", e.target.value)}
+                      className="bg-black/40 border-white/10 rounded-md h-10 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      disabled={isTournamentFull || isSubmitting}
+                    >
+                      <option value="">Select gender</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                      <option value="Prefer not to say">Prefer not to say</option>
+                    </select>
+                    {errors.captainGender && (
+                      <p className="text-xs text-destructive">{errors.captainGender}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
                     <Label htmlFor="teamContact" className="text-sm">
                       Contact Number <span className="text-destructive">*</span>
                     </Label>
@@ -667,6 +736,45 @@ export const TournamentRegistrationModal = ({
                   {errors.playerName && (
                     <p className="text-xs text-destructive">{errors.playerName}</p>
                   )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="dob" className="text-sm">
+                      Date of Birth <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="dob"
+                      type="date"
+                      value={individualData.dob}
+                      onChange={(e) => handleIndividualChange("dob", e.target.value)}
+                      className="bg-black/40 border-white/10"
+                      disabled={isTournamentFull || isSubmitting}
+                    />
+                    {errors.dob && (
+                      <p className="text-xs text-destructive">{errors.dob}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="gender" className="text-sm">
+                      Gender <span className="text-destructive">*</span>
+                    </Label>
+                    <select
+                      id="gender"
+                      value={individualData.gender}
+                      onChange={(e) => handleIndividualChange("gender", e.target.value)}
+                      className="bg-black/40 border-white/10 rounded-md h-10 px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      disabled={isTournamentFull || isSubmitting}
+                    >
+                      <option value="">Select gender</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                      <option value="Prefer not to say">Prefer not to say</option>
+                    </select>
+                    {errors.gender && (
+                      <p className="text-xs text-destructive">{errors.gender}</p>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
