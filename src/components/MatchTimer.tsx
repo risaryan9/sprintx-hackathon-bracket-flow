@@ -1,79 +1,115 @@
 import { useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Play, Pause, Square, Clock } from "lucide-react";
+import { Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { parseAsUTC } from "@/utils/timestampParser";
 
 interface MatchTimerProps {
   durationMinutes: number;
   onComplete?: () => void;
+  autoStart?: boolean; // Auto-start the timer when component mounts
+  actualStartTime?: string | null; // Actual start time from database - if provided, calculates remaining time
 }
 
 export const MatchTimer = ({
   durationMinutes,
   onComplete,
+  autoStart = false,
+  actualStartTime = null,
 }: MatchTimerProps) => {
-  const [isRunning, setIsRunning] = useState(false);
+  // Calculate initial remaining time based on actual start time if provided
+  const calculateInitialRemainingTime = (): number => {
+    if (actualStartTime) {
+      const startTime = parseAsUTC(actualStartTime);
+      if (startTime) {
+        const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
+        const now = new Date();
+        const remainingMs = endTime.getTime() - now.getTime();
+        const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+        return remainingSeconds;
+      }
+    }
+    // Default to full duration if no start time or calculation fails
+    return durationMinutes * 60;
+  };
+
+  const [isRunning, setIsRunning] = useState(autoStart); // Auto-start if autoStart is true
   const [isPaused, setIsPaused] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(durationMinutes * 60); // in seconds
+  const [timeRemaining, setTimeRemaining] = useState(calculateInitialRemainingTime()); // in seconds
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number | null>(null);
   const pausedTimeRef = useRef<number>(0);
 
+  // Auto-start when component mounts if autoStart is true and match has started
+  useEffect(() => {
+    if (autoStart && !isRunning && timeRemaining > 0) {
+      setIsRunning(true);
+      startTimeRef.current = Date.now();
+    }
+  }, [autoStart]); // Only run once on mount
+
+  // Timer logic: sync with database time if actualStartTime provided, otherwise countdown
   useEffect(() => {
     if (isRunning && !isPaused) {
-      intervalRef.current = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            setIsRunning(false);
-            setIsPaused(false);
-            if (onComplete) {
-              onComplete();
+      if (actualStartTime) {
+        // Sync with actual start time from database every second
+        // This ensures accuracy even if user refreshes the page
+        const syncInterval = setInterval(() => {
+          const startTime = parseAsUTC(actualStartTime);
+          if (startTime) {
+            const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
+            const now = new Date();
+            const remainingMs = endTime.getTime() - now.getTime();
+            const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+            
+            setTimeRemaining(remainingSeconds);
+            
+            if (remainingSeconds <= 0) {
+              setIsRunning(false);
+              setIsPaused(false);
+              if (onComplete) {
+                onComplete();
+              }
             }
-            return 0;
           }
-          return prev - 1;
-        });
-      }, 1000);
+        }, 1000);
+
+        return () => clearInterval(syncInterval);
+      } else {
+        // Standard countdown if no actualStartTime provided
+        intervalRef.current = setInterval(() => {
+          setTimeRemaining((prev) => {
+            if (prev <= 1) {
+              setIsRunning(false);
+              setIsPaused(false);
+              if (onComplete) {
+                onComplete();
+              }
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+
+        return () => {
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+        };
+      }
     } else {
+      // Clean up intervals when paused or stopped
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
     }
+  }, [isRunning, isPaused, onComplete, actualStartTime, durationMinutes]);
 
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [isRunning, isPaused, onComplete]);
-
-  const handleStart = () => {
-    if (!isRunning) {
-      startTimeRef.current = Date.now();
-      setIsRunning(true);
-      setIsPaused(false);
-    } else if (isPaused) {
-      // Resume from where we paused
-      setIsPaused(false);
-    }
-  };
-
-  const handlePause = () => {
-    if (isRunning && !isPaused) {
-      setIsPaused(true);
-    }
-  };
-
-  const handleStop = () => {
-    setIsRunning(false);
-    setIsPaused(false);
-    setTimeRemaining(durationMinutes * 60);
-    startTimeRef.current = null;
-    pausedTimeRef.current = 0;
-  };
+  // Timer controls removed - timer runs automatically and cannot be paused/stopped
+  // Removed handleStart, handlePause, and handleStop functions
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -134,50 +170,7 @@ export const MatchTimer = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {!isRunning ? (
-              <Button
-                size="sm"
-                onClick={handleStart}
-                className="button-gradient"
-              >
-                <Play className="h-4 w-4 mr-2" />
-                Start
-              </Button>
-            ) : (
-              <>
-                {!isPaused ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handlePause}
-                    className="glass border-white/10"
-                  >
-                    <Pause className="h-4 w-4 mr-2" />
-                    Pause
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    onClick={handleStart}
-                    className="button-gradient"
-                  >
-                    <Play className="h-4 w-4 mr-2" />
-                    Resume
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleStop}
-                  className="glass border-white/10"
-                >
-                  <Square className="h-4 w-4 mr-2" />
-                  Stop
-                </Button>
-              </>
-            )}
-          </div>
+          {/* Timer controls removed - timer runs automatically and cannot be paused/stopped */}
         </div>
 
         {timeRemaining === 0 && (

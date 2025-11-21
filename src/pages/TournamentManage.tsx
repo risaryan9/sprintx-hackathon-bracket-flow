@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2, Gavel, MapPin } from "lucide-react";
+import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2, Gavel, MapPin, Clock } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { getTournamentById, getTournamentEntriesCount, getTournamentEntries, getTournamentCourts, getTournamentUmpires } from "@/services/tournaments";
@@ -18,12 +18,15 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { calculateIdleStatusWithMatch, MatchForIdleCalc } from "@/utils/idleCalculations";
+import { useState, useEffect, useMemo } from "react";
 
 const TournamentManage = () => {
   const { tournamentId } = useParams<{ tournamentId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   const { data: tournament, isLoading, isError } = useQuery({
     queryKey: ["tournament", tournamentId],
@@ -47,12 +50,14 @@ const TournamentManage = () => {
     queryKey: ["tournament-courts", tournamentId],
     queryFn: () => getTournamentCourts(tournamentId || ""),
     enabled: !!tournamentId,
+    refetchInterval: 30000, // Refetch every 30 seconds for real-time updates
   });
 
   const { data: umpires = [], isLoading: isLoadingUmpires } = useQuery({
     queryKey: ["tournament-umpires", tournamentId],
     queryFn: () => getTournamentUmpires(tournamentId || ""),
     enabled: !!tournamentId,
+    refetchInterval: 30000, // Refetch every 30 seconds for real-time updates
   });
 
   const { data: matches = [], isLoading: isLoadingMatches, isError: isMatchesError } = useQuery({
@@ -60,6 +65,7 @@ const TournamentManage = () => {
     queryFn: () => getTournamentMatchesForBracket(tournamentId || ""),
     enabled: !!tournamentId,
     retry: 1,
+    refetchInterval: 30000, // Refetch every 30 seconds for real-time updates
   });
 
   // Check current round and if all matches are completed (for knockout)
@@ -167,6 +173,119 @@ const TournamentManage = () => {
       });
     },
   });
+
+  // Update time every 30 seconds for real-time idle status calculations
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+      // Invalidate queries to refresh data from database
+      queryClient.invalidateQueries({ queryKey: ["tournament-courts", tournamentId] });
+      queryClient.invalidateQueries({ queryKey: ["tournament-umpires", tournamentId] });
+      queryClient.invalidateQueries({ queryKey: ["tournament-matches", tournamentId] });
+    }, 30000); // Update every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [tournamentId, queryClient]);
+
+  // Convert matches to format needed for idle calculations
+  // This recalculates whenever matches or currentTime changes
+  const matchesForIdleCalc: MatchForIdleCalc[] = useMemo(() => {
+    const result = matches.map((m) => ({
+      id: m.id,
+      actual_start_time: m.actual_start_time || null,
+      duration_minutes: m.duration_minutes || null,
+    }));
+    console.log("=== matchesForIdleCalc created ===", {
+      totalMatches: matches.length,
+      matchesForCalc: result.length,
+      matchesWithStartTime: result.filter(m => m.actual_start_time).length,
+      matchIds: result.map(m => m.id),
+    });
+    return result;
+  }, [matches, currentTime]); // Recalculate when matches or time changes
+
+  // Debug logging (remove in production)
+  useEffect(() => {
+    console.log("=== Tournament Manage Debug ===");
+    console.log("Tournament ID:", tournamentId);
+    console.log("Courts count:", courts.length);
+    console.log("Umpires count:", umpires.length);
+    console.log("Matches count:", matches.length);
+    console.log("MatchesForIdleCalc count:", matchesForIdleCalc.length);
+    
+    if (courts.length > 0) {
+      console.log("=== Courts Data ===", courts.map(c => ({
+        id: c.id,
+        name: c.court_name,
+        is_idle: c.is_idle,
+        last_assigned_start_time: c.last_assigned_start_time,
+        last_assigned_match_id: c.last_assigned_match_id,
+        hasStartTime: !!c.last_assigned_start_time,
+      })));
+      
+      // Test calculation for each court
+      courts.forEach(court => {
+        const testStatus = calculateIdleStatusWithMatch(
+          court.is_idle ?? true,
+          court.last_assigned_start_time,
+          court.last_assigned_match_id,
+          matchesForIdleCalc
+        );
+        console.log(`=== Court "${court.court_name}" Calculation ===`, {
+          input: {
+            is_idle: court.is_idle,
+            last_assigned_start_time: court.last_assigned_start_time,
+            last_assigned_match_id: court.last_assigned_match_id,
+          },
+          calculatedStatus: testStatus,
+        });
+      });
+    }
+    
+    if (umpires.length > 0) {
+      console.log("=== Umpires Data ===", umpires.map(u => ({
+        id: u.id,
+        name: u.full_name,
+        is_idle: u.is_idle,
+        last_assigned_start_time: u.last_assigned_start_time,
+        last_assigned_match_id: u.last_assigned_match_id,
+        hasStartTime: !!u.last_assigned_start_time,
+      })));
+      
+      // Test calculation for each umpire
+      umpires.forEach(umpire => {
+        const testStatus = calculateIdleStatusWithMatch(
+          umpire.is_idle ?? true,
+          umpire.last_assigned_start_time,
+          umpire.last_assigned_match_id,
+          matchesForIdleCalc
+        );
+        console.log(`=== Umpire "${umpire.full_name}" Calculation ===`, {
+          input: {
+            is_idle: umpire.is_idle,
+            last_assigned_start_time: umpire.last_assigned_start_time,
+            last_assigned_match_id: umpire.last_assigned_match_id,
+          },
+          calculatedStatus: testStatus,
+        });
+      });
+    }
+    
+    if (matches.length > 0) {
+      const startedMatches = matches.filter(m => m.actual_start_time);
+      console.log("=== Matches Data ===", {
+        total: matches.length,
+        started: startedMatches.length,
+        matchesWithStartTime: startedMatches.map(m => ({
+          id: m.id,
+          actual_start_time: m.actual_start_time,
+          duration_minutes: m.duration_minutes,
+        })),
+      });
+      
+      console.log("=== All Matches for Calculation ===", matchesForIdleCalc);
+    }
+  }, [courts, umpires, matches, matchesForIdleCalc, tournamentId]);
 
   return (
     <div className="min-h-screen bg-black text-foreground">
@@ -314,22 +433,75 @@ const TournamentManage = () => {
                             </p>
                           ) : (
                             <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
-                              {courts.map((court) => (
-                                <div
-                                  key={court.id}
-                                  className="p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                                    <span className="text-sm font-medium">{court.court_name}</span>
+                              {courts.map((court) => {
+                                // Calculate idle status for this court
+                                const idleStatus = calculateIdleStatusWithMatch(
+                                  court.is_idle ?? true,
+                                  court.last_assigned_start_time,
+                                  court.last_assigned_match_id,
+                                  matchesForIdleCalc
+                                );
+                                
+                                // Use calculated status or fall back to database value
+                                const displayIsIdle = idleStatus.isIdle !== undefined 
+                                  ? idleStatus.isIdle 
+                                  : (court.is_idle ?? true);
+                                
+                                // Debug: log calculation for each court
+                                if (court.last_assigned_match_id) {
+                                  console.log(`Court "${court.court_name}" calculation:`, {
+                                    courtData: {
+                                      is_idle: court.is_idle,
+                                      last_assigned_start_time: court.last_assigned_start_time,
+                                      last_assigned_match_id: court.last_assigned_match_id,
+                                    },
+                                    calculatedStatus: idleStatus,
+                                    displayIsIdle,
+                                    matchFound: matchesForIdleCalc.find(m => m.id === court.last_assigned_match_id) || null,
+                                  });
+                                }
+                                
+                                return (
+                                  <div
+                                    key={court.id}
+                                    className="p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2 flex-1">
+                                        <MapPin className="h-4 w-4 text-muted-foreground" />
+                                        <span className="text-sm font-medium">{court.court_name}</span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge
+                                          variant="outline"
+                                          className={
+                                            displayIsIdle
+                                              ? "text-xs border-green-500/30 bg-green-500/10 text-green-400"
+                                              : "text-xs border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
+                                          }
+                                        >
+                                          {displayIsIdle ? "Idle" : "Busy"}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                    {court.location && (
+                                      <p className="text-xs text-muted-foreground mt-1 ml-6">
+                                        {court.location}
+                                      </p>
+                                    )}
+                                    {!idleStatus.isIdle && (
+                                      <div className="flex items-center gap-1 mt-2 ml-6 text-xs text-muted-foreground">
+                                        <Clock className="h-3 w-3" />
+                                        <span>
+                                          {idleStatus.timeUntilIdleFormatted 
+                                            ? `Free in ${idleStatus.timeUntilIdleFormatted}`
+                                            : "Match in progress"}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
-                                  {court.location && (
-                                    <p className="text-xs text-muted-foreground mt-1 ml-6">
-                                      {court.location}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -352,27 +524,74 @@ const TournamentManage = () => {
                             </p>
                           ) : (
                             <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
-                              {umpires.map((umpire) => (
-                                <div
-                                  key={umpire.id}
-                                  className="p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <Gavel className="h-4 w-4 text-muted-foreground" />
-                                    <span className="text-sm font-medium">{umpire.full_name}</span>
+                              {umpires.map((umpire) => {
+                                // Calculate idle status for this umpire
+                                const idleStatus = calculateIdleStatusWithMatch(
+                                  umpire.is_idle ?? true,
+                                  umpire.last_assigned_start_time,
+                                  umpire.last_assigned_match_id,
+                                  matchesForIdleCalc
+                                );
+                                
+                                // Debug: log calculation for each umpire
+                                if (umpire.last_assigned_match_id) {
+                                  console.log(`Umpire "${umpire.full_name}" calculation:`, {
+                                    umpireData: {
+                                      is_idle: umpire.is_idle,
+                                      last_assigned_start_time: umpire.last_assigned_start_time,
+                                      last_assigned_match_id: umpire.last_assigned_match_id,
+                                    },
+                                    calculatedStatus: idleStatus,
+                                    matchFound: matchesForIdleCalc.find(m => m.id === umpire.last_assigned_match_id) || null,
+                                  });
+                                }
+                                
+                                return (
+                                  <div
+                                    key={umpire.id}
+                                    className="p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2 flex-1">
+                                        <Gavel className="h-4 w-4 text-muted-foreground" />
+                                        <span className="text-sm font-medium">{umpire.full_name}</span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge
+                                          variant="outline"
+                                          className={
+                                            (idleStatus.isIdle !== undefined ? idleStatus.isIdle : (umpire.is_idle ?? true))
+                                              ? "text-xs border-green-500/30 bg-green-500/10 text-green-400"
+                                              : "text-xs border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
+                                          }
+                                        >
+                                          {(idleStatus.isIdle !== undefined ? idleStatus.isIdle : (umpire.is_idle ?? true)) ? "Idle" : "Busy"}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                    {umpire.license_no && (
+                                      <p className="text-xs text-muted-foreground mt-1 ml-6">
+                                        License: {umpire.license_no}
+                                      </p>
+                                    )}
+                                    {umpire.contact && (
+                                      <p className="text-xs text-muted-foreground mt-1 ml-6">
+                                        {umpire.contact}
+                                      </p>
+                                    )}
+                                    {!(idleStatus.isIdle !== undefined ? idleStatus.isIdle : (umpire.is_idle ?? true)) && (
+                                      <div className="flex items-center gap-1 mt-2 ml-6 text-xs text-muted-foreground">
+                                        <Clock className="h-3 w-3" />
+                                        <span>
+                                          {idleStatus.timeUntilIdleFormatted 
+                                            ? `Free in ${idleStatus.timeUntilIdleFormatted}`
+                                            : "Match in progress"}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
-                                  {umpire.license_no && (
-                                    <p className="text-xs text-muted-foreground mt-1 ml-6">
-                                      License: {umpire.license_no}
-                                    </p>
-                                  )}
-                                  {umpire.contact && (
-                                    <p className="text-xs text-muted-foreground mt-1 ml-6">
-                                      {umpire.contact}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </div>

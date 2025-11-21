@@ -1,7 +1,9 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Bracket, Seed, SeedItem, SeedTeam } from "react-brackets";
 import { BracketMatch } from "@/types/bracket";
 import { transformMatchesToRounds, MatchSeed, RoundProps } from "@/utils/bracketTransform";
+import { parseAsUTC } from "@/utils/timestampParser";
+import { formatTimeUntilIdle } from "@/utils/idleCalculations";
 
 // Type matching react-brackets RenderSeedProps
 interface RenderSeedProps {
@@ -12,7 +14,7 @@ interface RenderSeedProps {
   rounds?: RoundProps[];
 }
 import { format } from "date-fns";
-import { MapPin, User, Trophy, Calendar } from "lucide-react";
+import { MapPin, User, Trophy, Calendar, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface TournamentBracketProps {
@@ -22,9 +24,42 @@ interface TournamentBracketProps {
 
 const CustomSeed = ({ seed, breakpoint, roundIndex, seedIndex }: RenderSeedProps) => {
   const matchSeed = seed as MatchSeed;
+  const [currentTime, setCurrentTime] = useState(new Date());
   const isCompleted = matchSeed.is_completed;
+  const isRunning = !!matchSeed.actual_start_time && !isCompleted;
+  const isAwaitingResult = !!matchSeed.awaiting_result;
   const entry1Winner = matchSeed.winner_entry_id === matchSeed.entry1_id;
   const entry2Winner = matchSeed.winner_entry_id === matchSeed.entry2_id;
+
+  // Calculate remaining time for running matches
+  const calculateRemainingTime = (): number | null => {
+    if (!isRunning || !matchSeed.actual_start_time || !matchSeed.duration_minutes) {
+      return null;
+    }
+    
+    try {
+      const startTime = parseAsUTC(matchSeed.actual_start_time);
+      if (!startTime) return null;
+      
+      const endTime = new Date(startTime.getTime() + matchSeed.duration_minutes * 60 * 1000);
+      const remainingMs = endTime.getTime() - currentTime.getTime();
+      return Math.max(0, Math.ceil(remainingMs / (60 * 1000)));
+    } catch {
+      return null;
+    }
+  };
+
+  // Update time every 30 seconds for running matches
+  useEffect(() => {
+    if (isRunning) {
+      const interval = setInterval(() => {
+        setCurrentTime(new Date());
+      }, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [isRunning]);
+
+  const remainingMinutes = calculateRemainingTime();
 
   return (
     <Seed mobileBreakpoint={breakpoint} className="min-w-[265px]">
@@ -90,13 +125,38 @@ const CustomSeed = ({ seed, breakpoint, roundIndex, seedIndex }: RenderSeedProps
           )}
 
           {/* Status Badge */}
-          {isCompleted && (
-            <Badge 
-              className="mt-2 bg-green-500/20 text-green-400 border-green-500/30 text-xs w-full justify-center py-1"
-            >
-              Completed
-            </Badge>
-          )}
+          <div className="mt-2 space-y-1">
+            {isCompleted ? (
+              <Badge 
+                className="bg-green-500/20 text-green-400 border-green-500/30 text-xs w-full justify-center py-1"
+              >
+                Completed
+              </Badge>
+            ) : isAwaitingResult ? (
+              <Badge 
+                className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-xs w-full justify-center py-1"
+              >
+                Awaiting Result
+              </Badge>
+            ) : isRunning ? (
+              <>
+                <Badge 
+                  className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs w-full justify-center py-1"
+                >
+                  Running
+                </Badge>
+                {remainingMinutes !== null && remainingMinutes > 0 && (
+                  <Badge 
+                    variant="outline"
+                    className="bg-blue-500/10 text-blue-300 border-blue-500/20 text-xs w-full justify-center py-0.5"
+                  >
+                    <Clock className="h-2.5 w-2.5 mr-1" />
+                    {formatTimeUntilIdle(remainingMinutes)}
+                  </Badge>
+                )}
+              </>
+            ) : null}
+          </div>
         </div>
       </SeedItem>
     </Seed>

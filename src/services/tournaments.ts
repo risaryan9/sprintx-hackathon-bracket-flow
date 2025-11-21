@@ -94,6 +94,9 @@ export interface Court {
   court_name: string;
   location: string | null;
   created_at: string;
+  is_idle: boolean;
+  last_assigned_start_time: string | null;
+  last_assigned_match_id: string | null;
 }
 
 export const getTournamentCourts = async (tournamentId: string): Promise<Court[]> => {
@@ -116,6 +119,9 @@ export interface Umpire {
   contact: string | null;
   license_no: string | null;
   created_at: string;
+  is_idle: boolean;
+  last_assigned_start_time: string | null;
+  last_assigned_match_id: string | null;
 }
 
 export const getTournamentUmpires = async (tournamentId: string): Promise<Umpire[]> => {

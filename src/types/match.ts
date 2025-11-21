@@ -14,6 +14,8 @@ export interface Match {
   code_valid: boolean | null;
   winner_entry_id: string | null;
   is_completed: boolean | null;
+  actual_start_time: string | null;
+  awaiting_result: boolean | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -40,6 +42,9 @@ export interface Court {
   tournament_id: string;
   name: string;
   venue: string | null;
+  is_idle: boolean;
+  last_assigned_start_time: string | null;
+  last_assigned_match_id: string | null;
 }
 
 export interface Umpire {
@@ -47,6 +52,9 @@ export interface Umpire {
   name: string;
   club_id: string | null;
   contact: string | null;
+  is_idle: boolean;
+  last_assigned_start_time: string | null;
+  last_assigned_match_id: string | null;
 }
 
 export interface GenerateFixturesOptions {

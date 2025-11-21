@@ -1,10 +1,12 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { format } from "date-fns";
 import { BracketMatch } from "@/types/bracket";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Calendar, User, Trophy } from "lucide-react";
+import { MapPin, Calendar, User, Trophy, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { parseAsUTC } from "@/utils/timestampParser";
+import { formatTimeUntilIdle } from "@/utils/idleCalculations";
 
 interface FixtureViewProps {
   matches: BracketMatch[];
@@ -23,6 +25,33 @@ export const FixtureView = ({
   tournamentId,
   currentRound,
 }: FixtureViewProps) => {
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Update time every 30 seconds for running matches
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Helper function to calculate remaining time for a match
+  const calculateRemainingTime = (match: BracketMatch): number | null => {
+    if (!match.actual_start_time || !match.duration_minutes || match.is_completed) {
+      return null;
+    }
+    
+    try {
+      const startTime = parseAsUTC(match.actual_start_time);
+      if (!startTime) return null;
+      
+      const endTime = new Date(startTime.getTime() + match.duration_minutes * 60 * 1000);
+      const remainingMs = endTime.getTime() - currentTime.getTime();
+      return Math.max(0, Math.ceil(remainingMs / (60 * 1000)));
+    } catch {
+      return null;
+    }
+  };
   // Separate matches into current batch (with courts) and upcoming (without courts or later)
   const { currentBatch, upcomingMatches } = useMemo(() => {
     // Get all matches with court assignments or current round
@@ -220,11 +249,33 @@ export const FixtureView = ({
                       </div>
                     </div>
 
-                    {match.is_completed && (
-                      <Badge className="mt-3 bg-green-500/20 text-green-400 border-green-500/30 text-xs w-full justify-center">
-                        Completed
-                      </Badge>
-                    )}
+                    {/* Match Status */}
+                    <div className="mt-3 space-y-1">
+                      {match.is_completed ? (
+                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs w-full justify-center">
+                          Completed
+                        </Badge>
+                      ) : match.awaiting_result ? (
+                        <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-xs w-full justify-center">
+                          Awaiting Result
+                        </Badge>
+                      ) : match.actual_start_time ? (
+                        <>
+                          <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs w-full justify-center">
+                            Running
+                          </Badge>
+                          {(() => {
+                            const remaining = calculateRemainingTime(match);
+                            return remaining !== null && remaining > 0 ? (
+                              <Badge variant="outline" className="bg-blue-500/10 text-blue-300 border-blue-500/20 text-xs w-full justify-center">
+                                <Clock className="h-2.5 w-2.5 mr-1" />
+                                {formatTimeUntilIdle(remaining)}
+                              </Badge>
+                            ) : null;
+                          })()}
+                        </>
+                      ) : null}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -317,17 +368,36 @@ export const FixtureView = ({
                     </div>
 
                     {/* Status Badge */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-end gap-1">
                       {match.is_completed ? (
                         <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">
                           Completed
                         </Badge>
+                      ) : match.awaiting_result ? (
+                        <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-xs">
+                          Awaiting Result
+                        </Badge>
+                      ) : match.actual_start_time ? (
+                        <>
+                          <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs">
+                            Running
+                          </Badge>
+                          {(() => {
+                            const remaining = calculateRemainingTime(match);
+                            return remaining !== null && remaining > 0 ? (
+                              <Badge variant="outline" className="bg-blue-500/10 text-blue-300 border-blue-500/20 text-xs">
+                                <Clock className="h-2.5 w-2.5 mr-1" />
+                                {formatTimeUntilIdle(remaining)}
+                              </Badge>
+                            ) : null;
+                          })()}
+                        </>
                       ) : (
                         <Badge
                           variant="outline"
                           className="border-yellow-500/30 bg-yellow-500/10 text-yellow-400 text-xs"
                         >
-                          Pending
+                          Upcoming
                         </Badge>
                       )}
                     </div>

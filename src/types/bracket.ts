@@ -20,6 +20,8 @@ export interface BracketMatch {
   is_completed: boolean | null;
   match_code: string | null;
   code_valid: boolean | null;
+  actual_start_time?: string | null;
+  awaiting_result?: boolean | null;
 }
 
 export interface Round {

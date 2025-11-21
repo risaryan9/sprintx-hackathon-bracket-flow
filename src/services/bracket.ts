@@ -251,6 +251,8 @@ export const getTournamentMatchesForBracket = async (
       is_completed: match.is_completed,
       match_code: match.match_code,
       code_valid: match.code_valid,
+      actual_start_time: match.actual_start_time || null,
+      awaiting_result: match.awaiting_result || false,
     };
   });
 
@@ -282,6 +284,8 @@ export const getTournamentMatchesForBracket = async (
         is_completed: match.is_completed,
         match_code: match.match_code,
         code_valid: match.code_valid,
+        actual_start_time: match.actual_start_time || null,
+        awaiting_result: match.awaiting_result || false,
       }));
     }
     // If we don't have matches, re-throw the error

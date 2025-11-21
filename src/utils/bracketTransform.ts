@@ -27,6 +27,9 @@ export interface MatchSeed extends Seed {
   winner_entry_id?: string | null;
   entry1_id?: string | null;
   entry2_id?: string | null;
+  actual_start_time?: string | null;
+  awaiting_result?: boolean | null;
+  duration_minutes?: number | null;
 }
 
 export const transformMatchesToRounds = (
@@ -86,6 +89,9 @@ export const transformMatchesToRounds = (
       winner_entry_id: match.winner_entry_id,
       entry1_id: match.entry1_id,
       entry2_id: match.entry2_id,
+      actual_start_time: match.actual_start_time,
+      awaiting_result: match.awaiting_result,
+      duration_minutes: match.duration_minutes,
     }));
 
     return {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -12,6 +12,7 @@ import {
   Lock,
   Check,
   Play,
+  Clock,
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
@@ -27,6 +28,9 @@ import {
   submitMatchScore,
   MatchScoreInput,
 } from "@/services/umpires";
+import { startMatch } from "@/services/matches";
+import { autoUpdateIdleStatus } from "@/services/matchStatus";
+import { parseAsUTC } from "@/utils/timestampParser";
 import { MatchScoring } from "@/components/MatchScoring";
 import { MatchTimer } from "@/components/MatchTimer";
 import { BracketMatch } from "@/types/bracket";
@@ -43,13 +47,104 @@ const UmpireDashboard = () => {
   const [validatingMatchId, setValidatingMatchId] = useState<string | null>(null);
   const [codeErrors, setCodeErrors] = useState<Record<string, string>>({});
   const [startedMatches, setStartedMatches] = useState<Set<string>>(new Set());
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["umpire-matches", submittedLicenseNo],
     queryFn: () => getUmpireMatchesByLicense(submittedLicenseNo!),
     enabled: !!submittedLicenseNo,
     retry: false,
+    refetchInterval: 30000, // Refetch every 30 seconds
   });
+
+  // Update startedMatches state when data is loaded based on actual_start_time
+  useEffect(() => {
+    if (data?.matches) {
+      const newStartedMatches = new Set<string>();
+      data.matches.forEach((match) => {
+        if (match.actual_start_time) {
+          newStartedMatches.add(match.id);
+        }
+      });
+      setStartedMatches(newStartedMatches);
+    }
+  }, [data]);
+
+  // Auto-update idle status and refresh time every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+      // Auto-update idle status when match duration ends
+      if (submittedLicenseNo) {
+        autoUpdateIdleStatus().then(() => {
+          // Refresh match data after updating idle status
+          queryClient.invalidateQueries({ queryKey: ["umpire-matches", submittedLicenseNo] });
+        });
+      }
+    }, 30000); // Every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [submittedLicenseNo, queryClient]);
+
+  // Calculate remaining time for a match
+  const calculateRemainingTime = (match: BracketMatch): { minutesRemaining: number | null; isExpired: boolean } => {
+    if (!match.actual_start_time || !match.duration_minutes) {
+      return { minutesRemaining: null, isExpired: false };
+    }
+
+    try {
+      // CRITICAL: Parse timestamp as UTC using utility function
+      // This ensures database timestamps are correctly interpreted as UTC (not IST/local time)
+      const startTime = parseAsUTC(match.actual_start_time);
+      
+      if (!startTime) {
+        console.error("Invalid start time in calculateRemainingTime:", match.actual_start_time);
+        return { minutesRemaining: null, isExpired: false };
+      }
+
+      // Calculate end time (in UTC milliseconds)
+      const endTime = new Date(startTime.getTime() + match.duration_minutes * 60 * 1000);
+      
+      // Compare UTC timestamps (milliseconds since epoch are timezone-independent)
+      const timeRemainingMs = endTime.getTime() - currentTime.getTime();
+      
+      // Debug log to verify UTC parsing
+      console.log("Time calculation (UTC):", {
+        dbTimestamp: match.actual_start_time,
+        startTimeUTC: startTime.toISOString(),
+        currentTimeUTC: currentTime.toISOString(),
+        endTimeUTC: endTime.toISOString(),
+        timeRemainingMs,
+        timeRemainingMinutes: Math.ceil(timeRemainingMs / 60000),
+        timeRemainingFormatted: formatTimeRemaining(Math.ceil(timeRemainingMs / 60000)),
+      });
+      
+      if (timeRemainingMs <= 0) {
+        return { minutesRemaining: 0, isExpired: true };
+      }
+
+      return {
+        minutesRemaining: Math.ceil(timeRemainingMs / (60 * 1000)),
+        isExpired: false,
+      };
+    } catch (error) {
+      console.error("Error calculating remaining time:", error);
+      return { minutesRemaining: null, isExpired: false };
+    }
+  };
+
+  // Format time remaining
+  const formatTimeRemaining = (minutes: number | null): string => {
+    if (minutes === null || minutes <= 0) return "Time expired";
+    
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    }
+    return `${mins}m`;
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,6 +274,29 @@ const UmpireDashboard = () => {
       next[matchId] = "";
       return next;
     });
+  };
+
+  const handleStartMatch = async (matchId: string) => {
+    try {
+      await startMatch(matchId);
+      setStartedMatches((prev) => new Set(prev).add(matchId));
+      
+      // Refresh match data to reflect the updated actual_start_time
+      queryClient.invalidateQueries({
+        queryKey: ["umpire-matches", submittedLicenseNo],
+      });
+      
+      toast({
+        title: "Match Started",
+        description: "Match timer has been started and resources marked as busy.",
+      });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to start match.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -326,12 +444,52 @@ const UmpireDashboard = () => {
                                     {match.round}
                                   </Badge>
                                 )}
-                                <Badge
-                                  variant="outline"
-                                  className="border-yellow-500/30 bg-yellow-500/10 text-yellow-400 text-xs"
-                                >
-                                  Upcoming
-                                </Badge>
+                                {/* Match Status Badge */}
+                                {match.is_completed ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-green-500/30 bg-green-500/10 text-green-400 text-xs"
+                                  >
+                                    Completed
+                                  </Badge>
+                                ) : match.awaiting_result ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-orange-500/30 bg-orange-500/10 text-orange-400 text-xs"
+                                  >
+                                    Awaiting Result
+                                  </Badge>
+                                ) : match.actual_start_time ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs"
+                                  >
+                                    Running
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-yellow-500/30 bg-yellow-500/10 text-yellow-400 text-xs"
+                                  >
+                                    Upcoming
+                                  </Badge>
+                                )}
+                                {/* Time Remaining for Running Matches */}
+                                {match.actual_start_time && !match.is_completed && !match.awaiting_result && match.duration_minutes && (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs"
+                                  >
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    {(() => {
+                                      const { minutesRemaining } = calculateRemainingTime(match);
+                                      if (minutesRemaining !== null && minutesRemaining > 0) {
+                                        return formatTimeRemaining(minutesRemaining);
+                                      }
+                                      return "Time expired";
+                                    })()}
+                                  </Badge>
+                                )}
                               </div>
                             </div>
 
@@ -448,41 +606,46 @@ const UmpireDashboard = () => {
                                   </span>
                                 </div>
 
+                                {/* Awaiting Result Status */}
+                                {match.awaiting_result && !match.is_completed && (
+                                  <Alert className="bg-yellow-500/10 border-yellow-500/30">
+                                    <AlertDescription className="text-yellow-400 font-medium">
+                                      ⏰ Match duration has ended. Please submit the match result.
+                                    </AlertDescription>
+                                  </Alert>
+                                )}
+
                                 {/* Match Timer - Show if match is started */}
-                                {startedMatches.has(match.id) &&
+                                {(match.actual_start_time || startedMatches.has(match.id)) &&
                                   match.duration_minutes &&
                                   match.duration_minutes > 0 && (
                                     <MatchTimer
                                       durationMinutes={match.duration_minutes}
+                                      actualStartTime={match.actual_start_time || null}
+                                      autoStart={true}
                                       onComplete={() => {
                                         toast({
                                           title: "Match Time Expired",
                                           description:
-                                            "The match duration has been reached.",
+                                            "The match duration has been reached. Please submit the result.",
                                         });
+                                        // Refresh to show awaiting result status
+                                        queryClient.invalidateQueries({ queryKey: ["umpire-matches", submittedLicenseNo] });
                                       }}
                                     />
                                   )}
 
                                 {/* Start Match Button - Show if not started */}
-                                {!startedMatches.has(match.id) &&
+                                {!match.actual_start_time &&
                                   match.duration_minutes &&
                                   match.duration_minutes > 0 && (
                                     <div className="flex justify-center">
                                       <Button
-                                        onClick={() => {
-                                          setStartedMatches((prev) =>
-                                            new Set(prev).add(match.id)
-                                          );
-                                          toast({
-                                            title: "Match Started",
-                                            description: "Match timer has been started.",
-                                          });
-                                        }}
+                                        onClick={() => handleStartMatch(match.id)}
                                         className="button-gradient"
                                       >
                                         <Play className="h-4 w-4 mr-2" />
-                                        Start Match Timer
+                                        Start Match
                                       </Button>
                                     </div>
                                   )}

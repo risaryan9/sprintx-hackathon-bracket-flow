@@ -64,7 +64,7 @@ export const submitMatchScore = async (
   // First validate the match can be updated
   const { data: matchData, error: matchError } = await supabase
     .from("matches")
-    .select("match_code, code_valid, is_completed")
+    .select("match_code, code_valid, is_completed, umpire_id, court_id")
     .eq("id", matchId)
     .single();
 
@@ -108,6 +108,7 @@ export const submitMatchScore = async (
     winner_entry_id: winnerEntryId,
     is_completed: true,
     code_valid: false,
+    awaiting_result: false, // Clear awaiting result when match is completed
   };
 
   // Add scores if provided (assuming these fields exist in the database)
@@ -125,6 +126,41 @@ export const submitMatchScore = async (
 
   if (updateError) {
     throw new Error(`Failed to submit match score: ${updateError.message}`);
+  }
+
+  // Reset idle status for umpire and court when match is completed
+  if (matchData.umpire_id) {
+    const { error: umpireError } = await supabase
+      .from("umpires")
+      .update({
+        is_idle: true,
+        last_assigned_start_time: null,
+        last_assigned_match_id: null,
+      })
+      .eq("id", matchData.umpire_id)
+      .eq("last_assigned_match_id", matchId); // Only reset if this was the assigned match
+
+    if (umpireError) {
+      console.error("Failed to reset umpire idle status:", umpireError);
+      // Don't throw - match completion is more important
+    }
+  }
+
+  if (matchData.court_id) {
+    const { error: courtError } = await supabase
+      .from("courts")
+      .update({
+        is_idle: true,
+        last_assigned_start_time: null,
+        last_assigned_match_id: null,
+      })
+      .eq("id", matchData.court_id)
+      .eq("last_assigned_match_id", matchId); // Only reset if this was the assigned match
+
+    if (courtError) {
+      console.error("Failed to reset court idle status:", courtError);
+      // Don't throw - match completion is more important
+    }
   }
 };
 
@@ -350,6 +386,7 @@ export const getUmpireMatchesByLicense = async (
       is_completed: match.is_completed,
       match_code: match.match_code,
       code_valid: match.code_valid,
+      actual_start_time: match.actual_start_time,
     };
   });
 
