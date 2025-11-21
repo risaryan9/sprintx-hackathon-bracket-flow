@@ -18,7 +18,7 @@ const nextPowerOfTwo = (n: number): number => {
 
 // Helper: Shuffle array (Fisher-Yates)
 const shuffle = <T>(array: T[], seed?: number): T[] => {
-  const shuffled = [...array];
+  const  shuffled = [...array];
   if (seed !== undefined) {
     // Seeded shuffle using simple LCG
     let rng = seed;
