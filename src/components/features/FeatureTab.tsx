@@ -34,10 +34,10 @@ export const FeatureTab = ({ icon, title, description, isActive }: FeatureTabPro
           {icon}
         </div>
         <div className="text-left min-w-0">
-          <h3 className={`font-semibold truncate text-base ${isActive ? 'text-primary' : ''}`}>
+          <h3 className={`font-semibold text-base truncate ${isActive ? 'text-primary' : ''}`}>
             {title}
           </h3>
-          <p className="text-sm text-muted-foreground line-clamp-2">
+          <p className="text-sm text-muted-foreground line-clamp-1">
             {description}
           </p>
         </div>

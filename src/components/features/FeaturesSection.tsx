@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FeatureTab } from "./FeatureTab";
 import { FeatureContent } from "./FeatureContent";
 import { features } from "@/config/features";
 
 export const FeaturesSection = () => {
+  const [activeFeature, setActiveFeature] = useState(features[0].title);
+
   return (
     <section className="container px-4 py-24">
       {/* Header Section */}
@@ -18,7 +21,11 @@ export const FeaturesSection = () => {
         </p>
       </div>
 
-      <Tabs defaultValue={features[0].title} className="w-full">
+      <Tabs
+        value={activeFeature}
+        onValueChange={(value) => setActiveFeature(value)}
+        className="w-full"
+      >
         <div className="grid grid-cols-1 md:grid-cols-12 gap-12">
           {/* Left side - Tab triggers */}
           <div className="md:col-span-5 space-y-3">
@@ -33,7 +40,7 @@ export const FeaturesSection = () => {
                     title={feature.title}
                     description={feature.description}
                     icon={feature.icon}
-                    isActive={false}
+                    isActive={activeFeature === feature.title}
                   />
                 </TabsTrigger>
               ))}
@@ -51,6 +58,7 @@ export const FeaturesSection = () => {
                 <FeatureContent
                   image={feature.image}
                   title={feature.title}
+                  description={feature.description}
                 />
               </TabsContent>
             ))}
