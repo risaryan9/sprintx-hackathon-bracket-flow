@@ -14,6 +14,7 @@ export interface BracketMatch {
   umpire_id: string | null;
   umpire_name: string | null;
   scheduled_time: string | null;
+  duration_minutes: number | null;
   status: string | null;
   winner_entry_id: string | null;
   is_completed: boolean | null;

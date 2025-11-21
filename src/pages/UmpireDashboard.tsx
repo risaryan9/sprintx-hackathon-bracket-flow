@@ -11,6 +11,7 @@ import {
   User,
   Lock,
   Check,
+  Play,
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
@@ -27,6 +28,7 @@ import {
   MatchScoreInput,
 } from "@/services/umpires";
 import { MatchScoring } from "@/components/MatchScoring";
+import { MatchTimer } from "@/components/MatchTimer";
 import { BracketMatch } from "@/types/bracket";
 import { useToast } from "@/hooks/use-toast";
 
@@ -40,6 +42,7 @@ const UmpireDashboard = () => {
   const [validatedMatches, setValidatedMatches] = useState<Set<string>>(new Set());
   const [validatingMatchId, setValidatingMatchId] = useState<string | null>(null);
   const [codeErrors, setCodeErrors] = useState<Record<string, string>>({});
+  const [startedMatches, setStartedMatches] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["umpire-matches", submittedLicenseNo],
@@ -56,6 +59,7 @@ const UmpireDashboard = () => {
       setValidatedMatches(new Set()); // Reset validated matches
       setMatchCodeInputs({}); // Reset match code inputs
       setCodeErrors({}); // Reset errors
+      setStartedMatches(new Set()); // Reset started matches
     }
   };
 
@@ -436,13 +440,52 @@ const UmpireDashboard = () => {
 
                             {/* Validated State */}
                             {validatedMatches.has(match.id) && (
-                              <div className="pt-4 border-t border-primary/30">
-                                <div className="flex items-center gap-2 mb-4 text-sm text-primary">
+                              <div className="pt-4 border-t border-primary/30 space-y-4">
+                                <div className="flex items-center gap-2 text-sm text-primary">
                                   <Check className="h-4 w-4" />
                                   <span className="font-medium">
-                                    Match code verified. You can now enter results.
+                                    Match code verified. You can now manage the match.
                                   </span>
                                 </div>
+
+                                {/* Match Timer - Show if match is started */}
+                                {startedMatches.has(match.id) &&
+                                  match.duration_minutes &&
+                                  match.duration_minutes > 0 && (
+                                    <MatchTimer
+                                      durationMinutes={match.duration_minutes}
+                                      onComplete={() => {
+                                        toast({
+                                          title: "Match Time Expired",
+                                          description:
+                                            "The match duration has been reached.",
+                                        });
+                                      }}
+                                    />
+                                  )}
+
+                                {/* Start Match Button - Show if not started */}
+                                {!startedMatches.has(match.id) &&
+                                  match.duration_minutes &&
+                                  match.duration_minutes > 0 && (
+                                    <div className="flex justify-center">
+                                      <Button
+                                        onClick={() => {
+                                          setStartedMatches((prev) =>
+                                            new Set(prev).add(match.id)
+                                          );
+                                          toast({
+                                            title: "Match Started",
+                                            description: "Match timer has been started.",
+                                          });
+                                        }}
+                                        className="button-gradient"
+                                      >
+                                        <Play className="h-4 w-4 mr-2" />
+                                        Start Match Timer
+                                      </Button>
+                                    </div>
+                                  )}
 
                                 {/* Scoring Interface */}
                                 <MatchScoring

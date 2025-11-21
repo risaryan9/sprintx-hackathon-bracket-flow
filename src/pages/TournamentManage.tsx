@@ -7,6 +7,7 @@ import { getTournamentById, getTournamentEntriesCount, getTournamentEntries } fr
 import { generateFixtures, generateNextRoundFixtures } from "@/services/fixtures";
 import { getTournamentMatchesForBracket } from "@/services/bracket";
 import { MatchList } from "@/components/MatchList";
+import { FixtureView } from "@/components/FixtureView";
 import { getCurrentRound, areAllMatchesCompleted } from "@/services/matches";
 import { Entry } from "@/types/match";
 import { Button } from "@/components/ui/button";
@@ -404,11 +405,26 @@ const TournamentManage = () => {
                 </Button>
               </div>
             ) : (
-              <MatchList 
-                matches={matches} 
-                tournamentId={tournamentId || ""} 
-                currentRound={currentRound || null}
-              />
+              <div className="space-y-8">
+                {/* Fixture View - Separated by Court Assignment */}
+                <FixtureView
+                  matches={matches}
+                  tournamentId={tournamentId || ""}
+                  currentRound={currentRound || null}
+                />
+                
+                {/* Optional: Keep MatchList for detailed view with filters */}
+                {/* Uncomment below if you want both views available */}
+                {/* 
+                <div className="mt-12">
+                  <MatchList 
+                    matches={matches} 
+                    tournamentId={tournamentId || ""} 
+                    currentRound={currentRound || null}
+                  />
+                </div>
+                */}
+              </div>
             )}
           </section>
         )}

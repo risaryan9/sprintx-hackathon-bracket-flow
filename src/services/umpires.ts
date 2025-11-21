@@ -344,6 +344,7 @@ export const getUmpireMatchesByLicense = async (
       umpire_id: match.umpire_id,
       umpire_name: umpireData.full_name,
       scheduled_time: match.scheduled_time,
+      duration_minutes: match.duration_minutes,
       status: match.is_completed ? "completed" : "scheduled",
       winner_entry_id: match.winner_entry_id,
       is_completed: match.is_completed,
