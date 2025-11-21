@@ -88,4 +88,71 @@ export const getTournamentEntries = async (tournamentId: string): Promise<Entry[
   return (data as Entry[] | null) ?? [];
 };
 
+export interface Court {
+  id: string;
+  tournament_id: string | null;
+  court_name: string;
+  location: string | null;
+  created_at: string;
+}
+
+export const getTournamentCourts = async (tournamentId: string): Promise<Court[]> => {
+  const { data, error } = await supabase
+    .from("courts")
+    .select("*")
+    .eq("tournament_id", tournamentId)
+    .order("court_name", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as Court[] | null) ?? [];
+};
+
+export interface Umpire {
+  id: string;
+  full_name: string;
+  contact: string | null;
+  license_no: string | null;
+  created_at: string;
+}
+
+export const getTournamentUmpires = async (tournamentId: string): Promise<Umpire[]> => {
+  // First, get all matches for this tournament to find assigned umpires
+  const { data: matches, error: matchesError } = await supabase
+    .from("matches")
+    .select("umpire_id")
+    .eq("tournament_id", tournamentId)
+    .not("umpire_id", "is", null);
+
+  if (matchesError) {
+    throw new Error(`Failed to fetch matches: ${matchesError.message}`);
+  }
+
+  if (!matches || matches.length === 0) {
+    return [];
+  }
+
+  // Extract unique umpire IDs
+  const umpireIds = Array.from(new Set(matches.map((m: any) => m.umpire_id).filter(Boolean)));
+
+  if (umpireIds.length === 0) {
+    return [];
+  }
+
+  // Fetch umpire details
+  const { data: umpires, error: umpiresError } = await supabase
+    .from("umpires")
+    .select("*")
+    .in("id", umpireIds)
+    .order("full_name", { ascending: true });
+
+  if (umpiresError) {
+    throw new Error(`Failed to fetch umpires: ${umpiresError.message}`);
+  }
+
+  return (umpires as Umpire[] | null) ?? [];
+};
+
 

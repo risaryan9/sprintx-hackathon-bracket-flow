@@ -1,9 +1,9 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2 } from "lucide-react";
+import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2, Gavel, MapPin } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
-import { getTournamentById, getTournamentEntriesCount, getTournamentEntries } from "@/services/tournaments";
+import { getTournamentById, getTournamentEntriesCount, getTournamentEntries, getTournamentCourts, getTournamentUmpires } from "@/services/tournaments";
 import { generateFixtures, generateNextRoundFixtures } from "@/services/fixtures";
 import { getTournamentMatchesForBracket } from "@/services/bracket";
 import { MatchList } from "@/components/MatchList";
@@ -38,6 +38,18 @@ const TournamentManage = () => {
   const { data: entries = [], isLoading: isLoadingEntriesList } = useQuery({
     queryKey: ["tournament-entries", tournamentId],
     queryFn: () => getTournamentEntries(tournamentId || ""),
+    enabled: !!tournamentId,
+  });
+
+  const { data: courts = [], isLoading: isLoadingCourts } = useQuery({
+    queryKey: ["tournament-courts", tournamentId],
+    queryFn: () => getTournamentCourts(tournamentId || ""),
+    enabled: !!tournamentId,
+  });
+
+  const { data: umpires = [], isLoading: isLoadingUmpires } = useQuery({
+    queryKey: ["tournament-umpires", tournamentId],
+    queryFn: () => getTournamentUmpires(tournamentId || ""),
     enabled: !!tournamentId,
   });
 
@@ -159,7 +171,7 @@ const TournamentManage = () => {
       <Navigation />
       <main className="pt-32 pb-20">
         <section className="w-full px-4">
-          <div className="max-w-4xl mx-auto mb-8">
+          <div className="max-w-7xl mx-auto mb-8">
             <Button
               variant="ghost"
               onClick={() => navigate("/host")}
@@ -193,92 +205,181 @@ const TournamentManage = () => {
                     <CardTitle className="text-3xl">{tournament.name}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                  <div className="rounded-xl border border-white/10 bg-black/30 p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <div className="flex items-center gap-3">
-                        <Users className="h-5 w-5 text-primary" />
-                        <div>
-                          <p className="text-sm text-muted-foreground">Entries</p>
-                          {isLoadingEntries ? (
-                            <Loader2 className="h-4 w-4 animate-spin text-primary mt-1" />
-                          ) : (
-                            <p className="text-2xl font-semibold">
-                              {entriesCount} / {tournament.max_entries}
+                    {/* Bento Box Layout */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                      {/* Entry Details - Left (Largest) */}
+                      <div className="lg:col-span-2 rounded-xl border border-white/10 bg-black/30 p-6 flex flex-col">
+                        <div className="flex items-center justify-between mb-6">
+                          <div className="flex items-center gap-3">
+                            <Users className="h-5 w-5 text-primary" />
+                            <div>
+                              <p className="text-sm text-muted-foreground">Entries</p>
+                              {isLoadingEntries ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-primary mt-1" />
+                              ) : (
+                                <p className="text-2xl font-semibold">
+                                  {entriesCount} / {tournament.max_entries}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          {isMaxEntriesReached && (
+                            <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                              Full
+                            </Badge>
+                          )}
+                        </div>
+
+                        {/* Entries List */}
+                        <div className="flex flex-col">
+                          <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
+                            Entry Details
+                          </h3>
+                          {isLoadingEntriesList ? (
+                            <div className="flex justify-center py-8">
+                              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                            </div>
+                          ) : entries.length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-4">
+                              No entries yet
                             </p>
+                          ) : (
+                            <div className="space-y-2 overflow-y-auto custom-scrollbar pr-2" style={{ maxHeight: '600px' }}>
+                              {entries.map((entry, index) => (
+                                <div
+                                  key={entry.id}
+                                  className="flex items-center justify-between p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
+                                >
+                                  <div className="flex items-center gap-3 flex-1">
+                                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary text-sm font-semibold">
+                                      {index + 1}
+                                    </div>
+                                    <div className="flex-1">
+                                      {entry.player_id ? (
+                                        <div className="flex items-center gap-2">
+                                          <User className="h-4 w-4 text-muted-foreground" />
+                                          <span className="text-sm font-medium">
+                                            Player: {entry.player_id.slice(0, 8)}...
+                                          </span>
+                                        </div>
+                                      ) : entry.team_id ? (
+                                        <div className="flex items-center gap-2">
+                                          <Users2 className="h-4 w-4 text-muted-foreground" />
+                                          <span className="text-sm font-medium">
+                                            Team: {entry.team_id.slice(0, 8)}...
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">
+                                          Entry #{index + 1}
+                                        </span>
+                                      )}
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        Registered: {format(new Date(entry.created_at), "MMM d, yyyy HH:mm")}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <Badge
+                                    variant="outline"
+                                    className="text-xs border-white/10"
+                                  >
+                                    {entry.status || "Active"}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
                       </div>
-                      {isMaxEntriesReached && (
-                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                          Full
-                        </Badge>
-                      )}
-                    </div>
 
-                    {/* Entries List */}
-                    <div className="mb-6">
-                      <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
-                        Entry Details
-                      </h3>
-                      {isLoadingEntriesList ? (
-                        <div className="flex justify-center py-8">
-                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                        </div>
-                      ) : entries.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-4">
-                          No entries yet
-                        </p>
-                      ) : (
-                        <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-2">
-                          {entries.map((entry, index) => (
-                            <div
-                              key={entry.id}
-                              className="flex items-center justify-between p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
-                            >
-                              <div className="flex items-center gap-3 flex-1">
-                                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary text-sm font-semibold">
-                                  {index + 1}
-                                </div>
-                                <div className="flex-1">
-                                  {entry.player_id ? (
-                                    <div className="flex items-center gap-2">
-                                      <User className="h-4 w-4 text-muted-foreground" />
-                                      <span className="text-sm font-medium">
-                                        Player: {entry.player_id.slice(0, 8)}...
-                                      </span>
-                                    </div>
-                                  ) : entry.team_id ? (
-                                    <div className="flex items-center gap-2">
-                                      <Users2 className="h-4 w-4 text-muted-foreground" />
-                                      <span className="text-sm font-medium">
-                                        Team: {entry.team_id.slice(0, 8)}...
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-sm text-muted-foreground">
-                                      Entry #{index + 1}
-                                    </span>
-                                  )}
-                                  <p className="text-xs text-muted-foreground mt-1">
-                                    Registered: {format(new Date(entry.created_at), "MMM d, yyyy HH:mm")}
-                                  </p>
-                                </div>
-                              </div>
-                              <Badge
-                                variant="outline"
-                                className="text-xs border-white/10"
-                              >
-                                {entry.status || "Active"}
-                              </Badge>
+                      {/* Right Column - Two Equal Boxes */}
+                      <div className="lg:col-span-1 flex flex-col gap-6">
+                        {/* Assigned Courts */}
+                        <div className="rounded-xl border border-white/10 bg-black/30 p-6 flex-1">
+                          <div className="flex items-center gap-3 mb-4">
+                            <MapPin className="h-5 w-5 text-primary" />
+                            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                              Assigned Courts
+                            </h3>
+                          </div>
+                          {isLoadingCourts ? (
+                            <div className="flex justify-center py-8">
+                              <Loader2 className="h-5 w-5 animate-spin text-primary" />
                             </div>
-                          ))}
+                          ) : courts.length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-4">
+                              No courts assigned
+                            </p>
+                          ) : (
+                            <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+                              {courts.map((court) => (
+                                <div
+                                  key={court.id}
+                                  className="p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                                    <span className="text-sm font-medium">{court.court_name}</span>
+                                  </div>
+                                  {court.location && (
+                                    <p className="text-xs text-muted-foreground mt-1 ml-6">
+                                      {court.location}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      )}
+
+                        {/* Assigned Umpires */}
+                        <div className="rounded-xl border border-white/10 bg-black/30 p-6 flex-1">
+                          <div className="flex items-center gap-3 mb-4">
+                            <Gavel className="h-5 w-5 text-primary" />
+                            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                              Assigned Umpires
+                            </h3>
+                          </div>
+                          {isLoadingUmpires ? (
+                            <div className="flex justify-center py-8">
+                              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                            </div>
+                          ) : umpires.length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-4">
+                              No umpires assigned
+                            </p>
+                          ) : (
+                            <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+                              {umpires.map((umpire) => (
+                                <div
+                                  key={umpire.id}
+                                  className="p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Gavel className="h-4 w-4 text-muted-foreground" />
+                                    <span className="text-sm font-medium">{umpire.full_name}</span>
+                                  </div>
+                                  {umpire.license_no && (
+                                    <p className="text-xs text-muted-foreground mt-1 ml-6">
+                                      License: {umpire.license_no}
+                                    </p>
+                                  )}
+                                  {umpire.contact && (
+                                    <p className="text-xs text-muted-foreground mt-1 ml-6">
+                                      {umpire.contact}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
                     {/* Generate Fixtures Button - Only show if no matches exist */}
                     {!hasMatches && (
-                      <div className="flex justify-center">
+                      <div className="flex justify-center mt-6">
                         <Button
                           className={`${
                             isMaxEntriesReached
@@ -325,7 +426,6 @@ const TournamentManage = () => {
                         </AlertDescription>
                       </Alert>
                     )}
-                  </div>
                 </CardContent>
               </Card>
               </>
@@ -336,7 +436,7 @@ const TournamentManage = () => {
         {/* Match List */}
         {hasMatches && (
           <section className="w-full py-8">
-            <div className="max-w-4xl mx-auto px-4 mb-8">
+            <div className="max-w-7xl mx-auto px-4 mb-8">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-2xl font-semibold mb-2">Match Fixtures</h3>
