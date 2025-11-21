@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -14,7 +14,8 @@ import {
 import { DateRange } from "react-day-picker";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
-import { getTournaments } from "@/services/tournaments";
+import { TournamentRegistrationModal } from "@/components/TournamentRegistrationModal";
+import { getTournaments, getTournamentEntriesCount } from "@/services/tournaments";
 import { Tournament } from "@/types/tournament";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -113,6 +114,9 @@ const Tournaments = () => {
   const [sortBy, setSortBy] = useState(sortOptions[0].value);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [registrationTournament, setRegistrationTournament] = useState<Tournament | null>(null);
+  const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
+  const [entryCounts, setEntryCounts] = useState<Record<string, number>>({});
 
   const sportOptions = useMemo(
     () => Array.from(new Set(data.map((item) => item.sport))).sort(),
@@ -262,6 +266,77 @@ const Tournaments = () => {
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
+
+  useEffect(() => {
+    const tournamentsToFetch = paginatedTournaments.filter(
+      (tournament) => entryCounts[tournament.id] === undefined
+    );
+
+    if (tournamentsToFetch.length === 0) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const fetchCounts = async () => {
+      try {
+        const results = await Promise.all(
+          tournamentsToFetch.map(async (tournament) => {
+            const count = await getTournamentEntriesCount(tournament.id);
+            return [tournament.id, count] as const;
+          })
+        );
+
+        if (!isMounted) return;
+
+        setEntryCounts((prev) => {
+          const updated = { ...prev };
+          results.forEach(([id, count]) => {
+            updated[id] = count;
+          });
+          return updated;
+        });
+      } catch (error) {
+        console.error("Failed to load entry counts", error);
+      }
+    };
+
+    fetchCounts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [paginatedTournaments, entryCounts]);
+
+  const getEntryCountForTournament = (tournamentId: string) =>
+    entryCounts[tournamentId] ?? 0;
+
+  const isTournamentAtCapacity = (tournament: Tournament) => {
+    if (!tournament.max_entries || tournament.max_entries <= 0) {
+      return false;
+    }
+    return getEntryCountForTournament(tournament.id) >= tournament.max_entries;
+  };
+
+  const handleRegistrationSuccess = (tournamentId: string, totalEntries: number) => {
+    setEntryCounts((prev) => ({ ...prev, [tournamentId]: totalEntries }));
+  };
+
+  const openRegistrationModal = (tournament: Tournament) => {
+    setRegistrationTournament(tournament);
+    setIsRegistrationOpen(true);
+  };
+
+  const selectedEntriesCount = selectedTournament
+    ? getEntryCountForTournament(selectedTournament.id)
+    : 0;
+  const selectedEntriesLabel =
+    selectedTournament && selectedTournament.max_entries
+      ? `${Math.min(selectedEntriesCount, selectedTournament.max_entries)} / ${selectedTournament.max_entries}`
+      : `${selectedEntriesCount}`;
+  const selectedTournamentFull = selectedTournament
+    ? isTournamentAtCapacity(selectedTournament)
+    : false;
 
   const resetFilters = () => {
     setSelectedSports([]);
@@ -596,7 +671,13 @@ const Tournaments = () => {
               ) : (
                 <>
                   <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                    {paginatedTournaments.map((tournament) => (
+                    {paginatedTournaments.map((tournament) => {
+                      const entryCount = getEntryCountForTournament(tournament.id);
+                      const tournamentFull = isTournamentAtCapacity(tournament);
+                      const entriesLabel = tournament.max_entries
+                        ? `${Math.min(entryCount, tournament.max_entries)} / ${tournament.max_entries}`
+                        : `${entryCount}`;
+                      return (
                       <Card
                         key={tournament.id}
                         className="bg-[#0C0C0C] border-white/5 hover:border-primary/50 transition-all duration-300 overflow-hidden cursor-pointer flex flex-col"
@@ -613,6 +694,11 @@ const Tournaments = () => {
                             <MapPin className="h-3 w-3" />
                             {tournament.city}
                           </Badge>
+                          {tournamentFull && (
+                            <Badge className="absolute top-4 right-4 bg-destructive text-white rounded-full px-3 py-1">
+                              Full
+                            </Badge>
+                          )}
                         </div>
                         <CardHeader className="space-y-2">
                           <div className="flex items-center justify-between gap-2">
@@ -652,6 +738,15 @@ const Tournaments = () => {
                                 {formatCurrency(tournament.registration_fee)}
                               </p>
                             </div>
+                            <div className="rounded-xl border border-white/5 p-3 bg-white/5 col-span-2">
+                              <p className="text-muted-foreground text-xs mb-1">
+                                Entries
+                              </p>
+                              <p className="font-semibold">
+                                {entriesLabel}
+                                {tournament.max_entries ? "" : " registered"}
+                              </p>
+                            </div>
                           </div>
                         </CardContent>
                         <CardFooter className="flex items-center justify-between border-t border-white/5 pt-4">
@@ -663,19 +758,31 @@ const Tournaments = () => {
                               {tournament.organizer_name}
                             </p>
                           </div>
-                          <Button
-                            variant="outline"
-                            className="rounded-full"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setSelectedTournament(tournament);
-                            }}
-                          >
-                            View details
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              className="rounded-full"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedTournament(tournament);
+                              }}
+                            >
+                              View details
+                            </Button>
+                            <Button
+                              className="button-gradient rounded-full"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openRegistrationModal(tournament);
+                              }}
+                              disabled={tournamentFull}
+                            >
+                              {tournamentFull ? "Full" : "Register"}
+                            </Button>
+                          </div>
                         </CardFooter>
                       </Card>
-                    ))}
+                    )})}
                   </div>
 
                   {totalPages > 1 && (
@@ -736,6 +843,21 @@ const Tournaments = () => {
       </main>
       <Footer />
 
+      <TournamentRegistrationModal
+        tournament={registrationTournament}
+        open={isRegistrationOpen}
+        onOpenChange={(open) => {
+          setIsRegistrationOpen(open);
+          if (!open) {
+            setRegistrationTournament(null);
+          }
+        }}
+        currentEntriesCount={
+          registrationTournament ? getEntryCountForTournament(registrationTournament.id) : 0
+        }
+        onRegistrationSuccess={handleRegistrationSuccess}
+      />
+
       <Dialog
         open={!!selectedTournament}
         onOpenChange={(open) => {
@@ -779,7 +901,7 @@ const Tournaments = () => {
                     {selectedTournament.venue}, {selectedTournament.city}
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <DetailMetric
                     label="Prize Pool"
                     value={formatCurrency(selectedTournament.prize_pool)}
@@ -787,6 +909,10 @@ const Tournaments = () => {
                   <DetailMetric
                     label="Registration Fee"
                     value={formatCurrency(selectedTournament.registration_fee)}
+                  />
+                  <DetailMetric
+                    label="Entries"
+                    value={selectedEntriesLabel}
                   />
                 </div>
                 <div>
@@ -797,9 +923,32 @@ const Tournaments = () => {
                   <p className="text-muted-foreground">{selectedTournament.organizer_email}</p>
                   <p className="text-muted-foreground">{selectedTournament.organizer_contact}</p>
                 </div>
-                <Button className="button-gradient w-full">
-                  Register / Get Details
-                </Button>
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1 border-white/10 bg-black/30"
+                    onClick={() => {
+                      setSelectedTournament(null);
+                    }}
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    className={cn(
+                      "flex-1 button-gradient",
+                      selectedTournamentFull && "opacity-50 cursor-not-allowed"
+                    )}
+                    onClick={() => {
+                      if (!selectedTournamentFull && selectedTournament) {
+                        setSelectedTournament(null);
+                        openRegistrationModal(selectedTournament);
+                      }
+                    }}
+                    disabled={selectedTournamentFull}
+                  >
+                    {selectedTournamentFull ? "Full" : "Register"}
+                  </Button>
+                </div>
               </div>
             </div>
           </DialogContent>
