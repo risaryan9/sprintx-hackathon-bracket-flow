@@ -30,6 +30,7 @@ export const getTournamentMatchesForBracket = async (
   const umpireIds = new Set<string>();
   const playerIds = new Set<string>();
   const teamIds = new Set<string>();
+  const clubIds = new Set<string>();
 
   matches.forEach((match) => {
     if (match.entry1_id) entryIds.add(match.entry1_id);
@@ -101,21 +102,21 @@ export const getTournamentMatchesForBracket = async (
   const playerIdArray = Array.from(playerIds);
   const teamIdArray = Array.from(teamIds);
 
-  let players: Array<{ id: string; full_name: string }> = [];
-  let teams: Array<{ id: string; name: string }> = [];
+  let players: Array<{ id: string; full_name: string; club_id: string | null }> = [];
+  let teams: Array<{ id: string; team_name: string; club_id: string | null }> = [];
 
   try {
     const [playersResult, teamsResult] = await Promise.all([
       playerIdArray.length > 0
         ? supabase
             .from("players")
-            .select("id, full_name")
+            .select("id, full_name, club_id")
             .in("id", playerIdArray)
         : Promise.resolve({ data: [], error: null }),
       teamIdArray.length > 0
         ? supabase
             .from("teams")
-            .select("id, name")
+            .select("id, team_name, club_id")
             .in("id", teamIdArray)
         : Promise.resolve({ data: [], error: null }),
     ]);
@@ -123,35 +124,78 @@ export const getTournamentMatchesForBracket = async (
     if (playersResult.error) {
       console.warn("Error fetching players (table may not exist):", playersResult.error);
     } else {
-      players = (playersResult.data || []) as Array<{ id: string; full_name: string }>;
+      players = (playersResult.data || []) as Array<{ id: string; full_name: string; club_id: string | null }>;
+      // Collect club IDs from players
+      players.forEach((player) => {
+        if (player.club_id) clubIds.add(player.club_id);
+      });
     }
 
     if (teamsResult.error) {
       console.warn("Error fetching teams (table may not exist):", teamsResult.error);
     } else {
-      teams = (teamsResult.data || []) as Array<{ id: string; name: string }>;
+      teams = (teamsResult.data || []) as Array<{ id: string; team_name: string; club_id: string | null }>;
+      // Collect club IDs from teams
+      teams.forEach((team) => {
+        if (team.club_id) clubIds.add(team.club_id);
+      });
     }
   } catch (err) {
     console.warn("Error in parallel fetch for players/teams:", err);
+  }
+
+  const clubIdArray = Array.from(clubIds);
+  let clubs: Array<{ id: string; name: string }> = [];
+
+  try {
+    if (clubIdArray.length > 0) {
+      const { data: clubsResult, error: clubsError } = await supabase
+        .from("clubs")
+        .select("id, name")
+        .in("id", clubIdArray);
+
+      if (clubsError) {
+        console.warn("Error fetching clubs (table may not exist):", clubsError);
+      } else {
+        clubs = (clubsResult || []) as Array<{ id: string; name: string }>;
+      }
+    }
+  } catch (err) {
+    console.warn("Error fetching clubs:", err);
   }
 
   const entryMap = new Map(entries.map((e) => [e.id, e]));
   const courtMap = new Map(courts.map((c) => [c.id, c.court_name]));
   const umpireMap = new Map(umpires.map((u) => [u.id, u.full_name]));
   const playerMap = new Map(players.map((p) => [p.id, p.full_name]));
-  const teamMap = new Map(teams.map((t) => [t.id, t.name]));
+  const playerClubMap = new Map(players.map((p) => [p.id, p.club_id]));
+  const teamMap = new Map(teams.map((t) => [t.id, t.team_name]));
+  const teamClubMap = new Map(teams.map((t) => [t.id, t.club_id]));
+  const clubMap = new Map(clubs.map((c) => [c.id, c.name]));
 
   const bracketMatches: BracketMatch[] = matches.map((match) => {
     let entry1Name: string | null = null;
     let entry2Name: string | null = null;
+    let entry1ClubName: string | null = null;
+    let entry2ClubName: string | null = null;
 
     if (match.entry1_id) {
       const entry = entryMap.get(match.entry1_id);
       if (entry) {
         if (entry.player_id) {
           entry1Name = playerMap.get(entry.player_id) || `Player ${match.entry1_id.slice(0, 8)}`;
+          // Get club name for player
+          const playerClubId = playerClubMap.get(entry.player_id);
+          if (playerClubId) {
+            entry1ClubName = clubMap.get(playerClubId) || null;
+          }
         } else if (entry.team_id) {
           entry1Name = teamMap.get(entry.team_id) || `Team ${match.entry1_id.slice(0, 8)}`;
+          // Get club name for team
+          const teamClubId = teamClubMap.get(entry.team_id);
+          if (teamClubId) {
+            entry1ClubName = clubMap.get(teamClubId) || null;
+          }
         } else {
           entry1Name = `Entry ${match.entry1_id.slice(0, 8)}`;
         }
@@ -165,8 +209,18 @@ export const getTournamentMatchesForBracket = async (
       if (entry) {
         if (entry.player_id) {
           entry2Name = playerMap.get(entry.player_id) || `Player ${match.entry2_id.slice(0, 8)}`;
+          // Get club name for player
+          const playerClubId = playerClubMap.get(entry.player_id);
+          if (playerClubId) {
+            entry2ClubName = clubMap.get(playerClubId) || null;
+          }
         } else if (entry.team_id) {
           entry2Name = teamMap.get(entry.team_id) || `Team ${match.entry2_id.slice(0, 8)}`;
+          // Get club name for team
+          const teamClubId = teamClubMap.get(entry.team_id);
+          if (teamClubId) {
+            entry2ClubName = clubMap.get(teamClubId) || null;
+          }
         } else {
           entry2Name = `Entry ${match.entry2_id.slice(0, 8)}`;
         }
@@ -184,6 +238,8 @@ export const getTournamentMatchesForBracket = async (
       entry2_id: match.entry2_id,
       entry1_name: entry1Name,
       entry2_name: entry2Name,
+      entry1_club_name: entry1ClubName,
+      entry2_club_name: entry2ClubName,
       court_id: match.court_id,
       court_name: match.court_id ? courtMap.get(match.court_id) || null : null,
       umpire_id: match.umpire_id,
@@ -212,6 +268,8 @@ export const getTournamentMatchesForBracket = async (
         entry2_id: match.entry2_id,
         entry1_name: match.entry1_id ? `Entry ${match.entry1_id.slice(0, 8)}` : null,
         entry2_name: match.entry2_id ? `Entry ${match.entry2_id.slice(0, 8)}` : null,
+        entry1_club_name: null,
+        entry2_club_name: null,
         court_id: match.court_id,
         court_name: null,
         umpire_id: match.umpire_id,

@@ -87,16 +87,13 @@ const Navigation = () => {
                 {item.name}
               </button>
             ))}
-            <NavLink
-              to="/tournaments"
-              className={({ isActive }) =>
-                `text-sm transition-all duration-300 ${
-                  isActive ? "text-white font-semibold" : "text-muted-foreground hover:text-foreground"
-                }`
-              }
+            <button
+              type="button"
+              onClick={() => navigate("/umpire")}
+              className="text-sm text-muted-foreground hover:text-foreground transition-all duration-300"
             >
-              Tournaments
-            </NavLink>
+              Umpires
+            </button>
             <button
               type="button"
               onClick={handleHostClick}
@@ -105,11 +102,11 @@ const Navigation = () => {
               Host
             </button>
             <Button 
-              onClick={() => scrollToSection('cta')}
               size="sm"
               className="button-gradient"
+              onClick={() => navigate("/tournaments")}
             >
-              Book a Demo
+              Tournaments
             </Button>
           </div>
 
@@ -136,17 +133,16 @@ const Navigation = () => {
                       {item.name}
                     </button>
                   ))}
-                  <NavLink
-                    to="/tournaments"
-                    className={({ isActive }) =>
-                      `text-lg transition-all duration-300 ${
-                        isActive ? "text-white font-semibold" : "text-muted-foreground hover:text-foreground"
-                      }`
-                    }
-                    onClick={() => setIsMobileMenuOpen(false)}
+                  <button
+                    type="button"
+                    className="text-lg text-muted-foreground hover:text-foreground transition-colors text-left"
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      navigate("/umpire");
+                    }}
                   >
-                    Tournaments
-                  </NavLink>
+                    Umpires
+                  </button>
                   <button
                     type="button"
                     className="text-lg text-muted-foreground hover:text-foreground transition-colors text-left"
@@ -158,13 +154,13 @@ const Navigation = () => {
                     Host
                   </button>
                   <Button 
+                    className="button-gradient mt-4"
                     onClick={() => {
                       setIsMobileMenuOpen(false);
-                      scrollToSection('cta');
+                      navigate("/tournaments");
                     }}
-                    className="button-gradient mt-4"
                   >
-                    Book a Demo
+                    Tournaments
                   </Button>
                 </div>
               </SheetContent>

@@ -599,24 +599,38 @@ export const MatchList = ({ matches, tournamentId, currentRound }: MatchListProp
                       {/* Top Section: Player Names & Round */}
                       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
                         <div className="flex items-center gap-2 flex-wrap flex-1">
-                          <span className={cn(
-                            "text-xl font-semibold text-foreground",
-                            isFinalMatch && match.winner_entry_id === match.entry1_id && "text-primary text-2xl"
-                          )}>
-                {match.entry1_name || "TBD"}
-              </span>
+                          <div className="flex flex-col">
+                            <span className={cn(
+                              "text-xl font-semibold text-foreground",
+                              isFinalMatch && match.winner_entry_id === match.entry1_id && "text-primary text-2xl"
+                            )}>
+                              {match.entry1_name || "TBD"}
+                            </span>
+                            {match.entry1_club_name && (
+                              <span className="text-xs text-muted-foreground">
+                                {match.entry1_club_name}
+                              </span>
+                            )}
+                          </div>
                           <span className={cn(
                             "text-muted-foreground px-2 font-medium",
                             isFinalMatch && "text-lg"
                           )}>
                             vs
                           </span>
-                          <span className={cn(
-                            "text-xl font-semibold text-foreground",
-                            isFinalMatch && match.winner_entry_id === match.entry2_id && "text-primary text-2xl"
-                          )}>
-                {match.entry2_name || "BYE"}
-              </span>
+                          <div className="flex flex-col">
+                            <span className={cn(
+                              "text-xl font-semibold text-foreground",
+                              isFinalMatch && match.winner_entry_id === match.entry2_id && "text-primary text-2xl"
+                            )}>
+                              {match.entry2_name || "BYE"}
+                            </span>
+                            {match.entry2_club_name && (
+                              <span className="text-xs text-muted-foreground">
+                                {match.entry2_club_name}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
                           {match.round && (
@@ -734,7 +748,7 @@ export const MatchList = ({ matches, tournamentId, currentRound }: MatchListProp
                                     match.winner_entry_id === match.entry1_id
                                       ? "bg-primary text-white border-primary shadow-lg shadow-primary/50"
                                       : "glass border-white/10 hover:border-primary/50 hover:bg-primary/10",
-                                    "min-w-[180px]"
+                                    "min-w-[180px] !flex-row items-center gap-2 h-auto py-3"
                                   )}
                                   onClick={() =>
                                     handleSetWinner(
@@ -754,11 +768,18 @@ export const MatchList = ({ matches, tournamentId, currentRound }: MatchListProp
                                   ) : (
                                     <>
                                       {match.winner_entry_id === match.entry1_id ? (
-                                        <Crown className="h-4 w-4 mr-2" />
+                                        <Crown className="h-4 w-4 shrink-0" />
                                       ) : (
-                                        <Trophy className="h-4 w-4 mr-2" />
+                                        <Trophy className="h-4 w-4 shrink-0" />
                                       )}
-                                      {match.entry1_name}
+                                      <div className="flex flex-col items-start">
+                                        <span>{match.entry1_name}</span>
+                                        {match.entry1_club_name && (
+                                          <span className="text-xs opacity-80">
+                                            {match.entry1_club_name}
+                                          </span>
+                                        )}
+                                      </div>
                                     </>
                                   )}
                                 </Button>
@@ -775,7 +796,7 @@ export const MatchList = ({ matches, tournamentId, currentRound }: MatchListProp
                                     match.winner_entry_id === match.entry2_id
                                       ? "bg-primary text-white border-primary shadow-lg shadow-primary/50"
                                       : "glass border-white/10 hover:border-primary/50 hover:bg-primary/10",
-                                    "min-w-[180px]"
+                                    "min-w-[180px] !flex-row items-center gap-2 h-auto py-3"
                                   )}
                                   onClick={() =>
                                     handleSetWinner(
@@ -795,11 +816,18 @@ export const MatchList = ({ matches, tournamentId, currentRound }: MatchListProp
                                   ) : (
                                     <>
                                       {match.winner_entry_id === match.entry2_id ? (
-                                        <Crown className="h-4 w-4 mr-2" />
+                                        <Crown className="h-4 w-4 shrink-0" />
                                       ) : (
-                                        <Trophy className="h-4 w-4 mr-2" />
+                                        <Trophy className="h-4 w-4 shrink-0" />
                                       )}
-                                      {match.entry2_name}
+                                      <div className="flex flex-col items-start">
+                                        <span>{match.entry2_name}</span>
+                                        {match.entry2_club_name && (
+                                          <span className="text-xs opacity-80">
+                                            {match.entry2_club_name}
+                                          </span>
+                                        )}
+                                      </div>
                                     </>
                                   )}
                                 </Button>
@@ -840,11 +868,12 @@ export const MatchList = ({ matches, tournamentId, currentRound }: MatchListProp
                                         ? "default"
                                         : "outline"
                                     }
-                                    className={
+                                    className={cn(
                                       match.winner_entry_id === match.entry1_id
                                         ? "bg-primary text-white border-primary"
-                                        : "glass border-white/10 hover:border-primary/30"
-                                    }
+                                        : "glass border-white/10 hover:border-primary/30",
+                                      "!flex-row items-center gap-1 h-auto py-2"
+                                    )}
                                     onClick={() =>
                                       handleSetWinner(
                                         match.id,
@@ -858,9 +887,18 @@ export const MatchList = ({ matches, tournamentId, currentRound }: MatchListProp
                                     {updatingMatchId === match.id ? (
                                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                                     ) : (
-                                      <Trophy className="h-3 w-3 mr-1" />
+                                      <>
+                                        <Trophy className="h-3 w-3 shrink-0" />
+                                        <div className="flex flex-col items-start">
+                                          <span>{match.entry1_name}</span>
+                                          {match.entry1_club_name && (
+                                            <span className="text-xs opacity-80">
+                                              {match.entry1_club_name}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </>
                                     )}
-                                    {match.entry1_name}
                                   </Button>
                                 )}
                                 {match.entry2_id && match.entry2_name && (
@@ -871,11 +909,12 @@ export const MatchList = ({ matches, tournamentId, currentRound }: MatchListProp
                                         ? "default"
                                         : "outline"
                                     }
-                                    className={
+                                    className={cn(
                                       match.winner_entry_id === match.entry2_id
                                         ? "bg-primary text-white border-primary"
-                                        : "glass border-white/10 hover:border-primary/30"
-                                    }
+                                        : "glass border-white/10 hover:border-primary/30",
+                                      "!flex-row items-center gap-1 h-auto py-2"
+                                    )}
                                     onClick={() =>
                                       handleSetWinner(
                                         match.id,
@@ -889,11 +928,20 @@ export const MatchList = ({ matches, tournamentId, currentRound }: MatchListProp
                                     {updatingMatchId === match.id ? (
                                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                                     ) : (
-                                      <Trophy className="h-3 w-3 mr-1" />
+                                      <>
+                                        <Trophy className="h-3 w-3 shrink-0" />
+                                        <div className="flex flex-col items-start">
+                                          <span>{match.entry2_name}</span>
+                                          {match.entry2_club_name && (
+                                            <span className="text-xs opacity-80">
+                                              {match.entry2_club_name}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </>
                                     )}
-                                    {match.entry2_name}
                                   </Button>
-              )}
+                                )}
             </div>
           </div>
                             {match.winner_entry_id && (

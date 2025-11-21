@@ -7,6 +7,8 @@ export interface BracketMatch {
   entry2_id: string | null;
   entry1_name: string | null;
   entry2_name: string | null;
+  entry1_club_name: string | null;
+  entry2_club_name: string | null;
   court_id: string | null;
   court_name: string | null;
   umpire_id: string | null;

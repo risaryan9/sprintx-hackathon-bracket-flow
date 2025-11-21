@@ -10,6 +10,7 @@ import HostLogin from "./pages/HostLogin";
 import HostDashboard from "./pages/HostDashboard";
 import TournamentManage from "./pages/TournamentManage";
 import AddTournament from "./pages/AddTournament";
+import UmpireDashboard from "./pages/UmpireDashboard";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +37,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/tournaments" element={<Tournaments />} />
+              <Route path="/umpire" element={<UmpireDashboard />} />
               <Route path="/host/login" element={<HostLogin />} />
               <Route
                 path="/host"
