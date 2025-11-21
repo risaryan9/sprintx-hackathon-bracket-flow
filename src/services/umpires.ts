@@ -9,7 +9,124 @@ export interface UmpireWithMatches {
   };
   matches: BracketMatch[];
   tournamentNames: Record<string, string>;
+  tournamentSports: Record<string, string>;
 }
+
+/**
+ * Validate match code
+ */
+export const validateMatchCode = async (
+  matchId: string,
+  matchCode: string
+): Promise<boolean> => {
+  const { data, error } = await supabase
+    .from("matches")
+    .select("match_code, code_valid, is_completed")
+    .eq("id", matchId)
+    .single();
+
+  if (error || !data) {
+    throw new Error("Match not found.");
+  }
+
+  if (data.is_completed) {
+    throw new Error("This match has already been completed and cannot be edited.");
+  }
+
+  if (!data.code_valid) {
+    throw new Error("Match code has been invalidated and cannot be used.");
+  }
+
+  if (data.match_code !== matchCode) {
+    return false;
+  }
+
+  return true;
+};
+
+export interface MatchScoreInput {
+  entry1_score?: number | null;
+  entry2_score?: number | null;
+  winner_entry_id: string | null;
+  entry1_disqualified?: boolean;
+  entry2_disqualified?: boolean;
+}
+
+/**
+ * Submit match score and finalize match
+ */
+export const submitMatchScore = async (
+  matchId: string,
+  entry1Id: string | null,
+  entry2Id: string | null,
+  scoreInput: MatchScoreInput
+): Promise<void> => {
+  // First validate the match can be updated
+  const { data: matchData, error: matchError } = await supabase
+    .from("matches")
+    .select("match_code, code_valid, is_completed")
+    .eq("id", matchId)
+    .single();
+
+  if (matchError || !matchData) {
+    throw new Error("Match not found.");
+  }
+
+  if (matchData.is_completed) {
+    throw new Error("This match has already been completed.");
+  }
+
+  if (!matchData.code_valid) {
+    throw new Error("Match code has been invalidated.");
+  }
+
+  // Determine winner if disqualification is set
+  let winnerEntryId = scoreInput.winner_entry_id;
+  
+  if (scoreInput.entry1_disqualified && scoreInput.entry2_disqualified) {
+    throw new Error("Both entries cannot be disqualified.");
+  }
+  
+  if (scoreInput.entry1_disqualified) {
+    if (!entry2Id) {
+      throw new Error("Cannot disqualify entry 1 when entry 2 is not assigned.");
+    }
+    winnerEntryId = entry2Id;
+  } else if (scoreInput.entry2_disqualified) {
+    if (!entry1Id) {
+      throw new Error("Cannot disqualify entry 2 when entry 1 is not assigned.");
+    }
+    winnerEntryId = entry1Id;
+  }
+
+  if (!winnerEntryId) {
+    throw new Error("A winner must be assigned before completing the match.");
+  }
+
+  // Update match with scores and completion status
+  const updateData: any = {
+    winner_entry_id: winnerEntryId,
+    is_completed: true,
+    code_valid: false,
+  };
+
+  // Add scores if provided (assuming these fields exist in the database)
+  if (scoreInput.entry1_score !== undefined && scoreInput.entry1_score !== null) {
+    updateData.entry1_score = scoreInput.entry1_score;
+  }
+  if (scoreInput.entry2_score !== undefined && scoreInput.entry2_score !== null) {
+    updateData.entry2_score = scoreInput.entry2_score;
+  }
+
+  const { error: updateError } = await supabase
+    .from("matches")
+    .update(updateData)
+    .eq("id", matchId);
+
+  if (updateError) {
+    throw new Error(`Failed to submit match score: ${updateError.message}`);
+  }
+};
 
 /**
  * Get umpire by license number and fetch all their upcoming matches
@@ -18,6 +135,7 @@ export const getUmpireMatchesByLicense = async (
   licenseNo: string
 ): Promise<UmpireWithMatches> => {
   // First, find the umpire by license_no
+  console.log(`Looking up umpire with license_no: ${licenseNo}`);
   const { data: umpireData, error: umpireError } = await supabase
     .from("umpires")
     .select("id, full_name, license_no")
@@ -25,28 +143,76 @@ export const getUmpireMatchesByLicense = async (
     .single();
 
   if (umpireError || !umpireData) {
+    console.error("Umpire lookup error:", umpireError);
+    // Try to see what umpires exist (for debugging)
+    const { data: allUmpires } = await supabase
+      .from("umpires")
+      .select("id, full_name, license_no")
+      .limit(5);
+    console.log("Sample umpires in database:", allUmpires);
     throw new Error("Umpire not found with the provided license number.");
   }
 
   const umpireId = umpireData.id;
+  console.log(`Found umpire: ${umpireData.full_name}, ID: ${umpireId}, License: ${umpireData.license_no}`);
 
   // Get current time to filter for upcoming matches
-  const now = new Date().toISOString();
+  const now = new Date();
 
-  // Fetch all matches assigned to this umpire that are not completed and are upcoming
+  // Fetch all matches assigned to this umpire that are not completed
+  // Don't filter by scheduled_time in the query - we'll do it in JavaScript
+  // to properly handle null values and future dates
   const { data: matchesData, error: matchesError } = await supabase
     .from("matches")
     .select("*")
     .eq("umpire_id", umpireId)
-    .eq("is_completed", false)
-    .gte("scheduled_time", now)
-    .order("scheduled_time", { ascending: true });
+    .eq("is_completed", false);
 
   if (matchesError) {
     throw new Error(`Failed to fetch matches: ${matchesError.message}`);
   }
 
-  const matches = matchesData || [];
+  // Helper function to parse scheduled_time (handles both ISO and "YYYY-MM-DD HH:MM:SS" formats)
+  const parseScheduledTime = (timeStr: string | null): Date | null => {
+    if (!timeStr) return null;
+    // If it's in "YYYY-MM-DD HH:MM:SS" format, convert to ISO
+    if (timeStr.includes(" ") && !timeStr.includes("T")) {
+      timeStr = timeStr.replace(" ", "T");
+    }
+    // Try to parse as ISO
+    let date = new Date(timeStr);
+    // If still invalid, try adding timezone
+    if (isNaN(date.getTime())) {
+      date = new Date(timeStr + "Z");
+    }
+    return isNaN(date.getTime()) ? null : date;
+  };
+
+  // Filter matches - include all incomplete matches regardless of date for now
+  // This will help debug if the issue is with date parsing or something else
+  // We'll filter to show all incomplete matches assigned to this umpire
+  let matches = matchesData || [];
+  
+  // Log for debugging
+  console.log(`Umpire ID: ${umpireId}, Found ${matches.length} incomplete matches`);
+  if (matches.length > 0) {
+    console.log("Sample match:", {
+      id: matches[0].id,
+      umpire_id: matches[0].umpire_id,
+      scheduled_time: matches[0].scheduled_time,
+      is_completed: matches[0].is_completed
+    });
+  }
+
+  // Sort matches by scheduled_time, with nulls last
+  matches.sort((a: any, b: any) => {
+    const timeA = parseScheduledTime(a.scheduled_time);
+    const timeB = parseScheduledTime(b.scheduled_time);
+    if (!timeA && !timeB) return 0;
+    if (!timeA) return 1;
+    if (!timeB) return -1;
+    return timeA.getTime() - timeB.getTime();
+  });
 
   // Now enrich matches with related data (tournaments, entries, courts, etc.)
   const tournamentIds = new Set<string>();
@@ -65,7 +231,7 @@ export const getUmpireMatchesByLicense = async (
     tournamentIds.size > 0
       ? supabase
           .from("tournaments")
-          .select("id, name")
+          .select("id, name, sport")
           .in("id", Array.from(tournamentIds))
       : Promise.resolve({ data: [], error: null }),
     entryIds.size > 0
@@ -85,6 +251,7 @@ export const getUmpireMatchesByLicense = async (
   const tournaments = (tournamentsResult.data || []) as Array<{
     id: string;
     name: string;
+    sport: string;
   }>;
   const entries = (entriesResult.data || []) as Array<{
     id: string;
@@ -191,6 +358,12 @@ export const getUmpireMatchesByLicense = async (
     tournamentNames[id] = name;
   });
 
+  // Also fetch tournament sports for scoring type determination
+  const tournamentSports: Record<string, string> = {};
+  tournaments.forEach((t) => {
+    tournamentSports[t.id] = t.sport || "";
+  });
+
   return {
     umpire: {
       id: umpireData.id,
@@ -199,6 +372,7 @@ export const getUmpireMatchesByLicense = async (
     },
     matches: bracketMatches,
     tournamentNames: tournamentNames,
+    tournamentSports: tournamentSports,
   };
 };
 

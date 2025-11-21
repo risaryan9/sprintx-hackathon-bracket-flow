@@ -1,21 +1,45 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Loader2, Eye, EyeOff, Calendar, MapPin, Trophy, User } from "lucide-react";
+import {
+  Loader2,
+  Eye,
+  EyeOff,
+  Calendar,
+  MapPin,
+  Trophy,
+  User,
+  Lock,
+  Check,
+} from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { getUmpireMatchesByLicense } from "@/services/umpires";
+import {
+  getUmpireMatchesByLicense,
+  validateMatchCode,
+  submitMatchScore,
+  MatchScoreInput,
+} from "@/services/umpires";
+import { MatchScoring } from "@/components/MatchScoring";
 import { BracketMatch } from "@/types/bracket";
+import { useToast } from "@/hooks/use-toast";
 
 const UmpireDashboard = () => {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [licenseNo, setLicenseNo] = useState("");
   const [submittedLicenseNo, setSubmittedLicenseNo] = useState<string | null>(null);
   const [revealedCodes, setRevealedCodes] = useState<Set<string>>(new Set());
+  const [matchCodeInputs, setMatchCodeInputs] = useState<Record<string, string>>({});
+  const [validatedMatches, setValidatedMatches] = useState<Set<string>>(new Set());
+  const [validatingMatchId, setValidatingMatchId] = useState<string | null>(null);
+  const [codeErrors, setCodeErrors] = useState<Record<string, string>>({});
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["umpire-matches", submittedLicenseNo],
@@ -29,6 +53,9 @@ const UmpireDashboard = () => {
     if (licenseNo.trim()) {
       setSubmittedLicenseNo(licenseNo.trim());
       setRevealedCodes(new Set()); // Reset revealed codes on new search
+      setValidatedMatches(new Set()); // Reset validated matches
+      setMatchCodeInputs({}); // Reset match code inputs
+      setCodeErrors({}); // Reset errors
     }
   };
 
@@ -56,6 +83,98 @@ const UmpireDashboard = () => {
   const getTournamentName = (tournamentId: string | null) => {
     if (!tournamentId || !data) return "Unknown Tournament";
     return data.tournamentNames[tournamentId] || `Tournament ${tournamentId.slice(0, 8)}`;
+  };
+
+  const getTournamentSport = (tournamentId: string | null) => {
+    if (!tournamentId || !data) return "";
+    return data.tournamentSports[tournamentId] || "";
+  };
+
+  const handleMatchCodeSubmit = async (matchId: string, matchCode: string) => {
+    setValidatingMatchId(matchId);
+    setCodeErrors({ ...codeErrors, [matchId]: "" });
+
+    try {
+      const isValid = await validateMatchCode(matchId, matchCode);
+      if (isValid) {
+        setValidatedMatches((prev) => new Set(prev).add(matchId));
+        setCodeErrors((prev) => {
+          const next = { ...prev };
+          delete next[matchId];
+          return next;
+        });
+        toast({
+          title: "Match code validated",
+          description: "You can now enter match results.",
+        });
+      } else {
+        setCodeErrors((prev) => ({
+          ...prev,
+          [matchId]: "Incorrect match code. Please try again.",
+        }));
+      }
+    } catch (err) {
+      setCodeErrors((prev) => ({
+        ...prev,
+        [matchId]:
+          err instanceof Error
+            ? err.message
+            : "Failed to validate match code.",
+      }));
+    } finally {
+      setValidatingMatchId(null);
+    }
+  };
+
+  const handleScoreSubmit = async (matchId: string, scoreInput: MatchScoreInput) => {
+    const match = data?.matches.find((m) => m.id === matchId);
+    if (!match) return;
+
+    try {
+      await submitMatchScore(
+        matchId,
+        match.entry1_id,
+        match.entry2_id,
+        scoreInput
+      );
+
+      // Refresh matches
+      queryClient.invalidateQueries({
+        queryKey: ["umpire-matches", submittedLicenseNo],
+      });
+
+      // Clear validation state for this match
+      setValidatedMatches((prev) => {
+        const next = new Set(prev);
+        next.delete(matchId);
+        return next;
+      });
+      setMatchCodeInputs((prev) => {
+        const next = { ...prev };
+        delete next[matchId];
+        return next;
+      });
+
+      toast({
+        title: "Match completed",
+        description: "Match results have been submitted successfully.",
+      });
+    } catch (err) {
+      throw err; // Re-throw to let MatchScoring handle it
+    }
+  };
+
+  const handleScoreCancel = (matchId: string) => {
+    setValidatedMatches((prev) => {
+      const next = new Set(prev);
+      next.delete(matchId);
+      return next;
+    });
+    setMatchCodeInputs((prev) => {
+      const next = { ...prev };
+      next[matchId] = "";
+      return next;
+    });
   };
 
   return (
@@ -249,38 +368,91 @@ const UmpireDashboard = () => {
                             </div>
 
                             {/* Match Code Section */}
-                            {match.match_code && (
+                            {match.match_code && !validatedMatches.has(match.id) && (
                               <div className="pt-4 border-t border-white/10">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-sm font-medium text-muted-foreground">
-                                    Match Code:
-                                  </span>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => toggleRevealCode(match.id)}
-                                    className="text-primary hover:text-primary/80"
-                                  >
-                                    {isCodeRevealed ? (
-                                      <>
-                                        <EyeOff className="h-4 w-4 mr-2" />
-                                        Hide Code
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Eye className="h-4 w-4 mr-2" />
-                                        Reveal Code
-                                      </>
-                                    )}
-                                  </Button>
-                                </div>
-                                {isCodeRevealed && (
-                                  <div className="mt-2 p-3 bg-primary/10 border border-primary/30 rounded-lg">
-                                    <code className="text-primary font-mono font-semibold">
-                                      {match.match_code}
-                                    </code>
+                                <div className="space-y-3">
+                                  <Label htmlFor={`match-code-${match.id}`} className="text-sm font-medium text-muted-foreground">
+                                    Enter Match Code to Edit:
+                                  </Label>
+                                  <div className="flex gap-2">
+                                    <Input
+                                      id={`match-code-${match.id}`}
+                                      type="text"
+                                      placeholder="Enter match code"
+                                      value={matchCodeInputs[match.id] || ""}
+                                      onChange={(e) =>
+                                        setMatchCodeInputs({
+                                          ...matchCodeInputs,
+                                          [match.id]: e.target.value,
+                                        })
+                                      }
+                                      disabled={validatingMatchId === match.id}
+                                      className="flex-1 bg-black/40 border-white/10 font-mono"
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter" && matchCodeInputs[match.id]) {
+                                          handleMatchCodeSubmit(
+                                            match.id,
+                                            matchCodeInputs[match.id]
+                                          );
+                                        }
+                                      }}
+                                    />
+                                    <Button
+                                      onClick={() =>
+                                        handleMatchCodeSubmit(
+                                          match.id,
+                                          matchCodeInputs[match.id] || ""
+                                        )
+                                      }
+                                      disabled={
+                                        !matchCodeInputs[match.id]?.trim() ||
+                                        validatingMatchId === match.id
+                                      }
+                                      className="button-gradient"
+                                    >
+                                      {validatingMatchId === match.id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <>
+                                          <Lock className="h-4 w-4 mr-2" />
+                                          Verify
+                                        </>
+                                      )}
+                                    </Button>
                                   </div>
-                                )}
+                                  {codeErrors[match.id] && (
+                                    <Alert
+                                      variant="destructive"
+                                      className="bg-red-500/10 border-red-500/30"
+                                    >
+                                      <AlertDescription className="text-red-400 text-sm">
+                                        {codeErrors[match.id]}
+                                      </AlertDescription>
+                                    </Alert>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Validated State */}
+                            {validatedMatches.has(match.id) && (
+                              <div className="pt-4 border-t border-primary/30">
+                                <div className="flex items-center gap-2 mb-4 text-sm text-primary">
+                                  <Check className="h-4 w-4" />
+                                  <span className="font-medium">
+                                    Match code verified. You can now enter results.
+                                  </span>
+                                </div>
+
+                                {/* Scoring Interface */}
+                                <MatchScoring
+                                  match={match}
+                                  sport={getTournamentSport(match.tournament_id)}
+                                  onSubmit={(scoreInput) =>
+                                    handleScoreSubmit(match.id, scoreInput)
+                                  }
+                                  onCancel={() => handleScoreCancel(match.id)}
+                                />
                               </div>
                             )}
                           </CardContent>
