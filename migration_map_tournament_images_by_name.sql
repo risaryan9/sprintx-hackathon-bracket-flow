@@ -83,3 +83,4 @@ WHERE image_url IS NULL
    OR image_url NOT LIKE '/%%.png'
 ORDER BY name;
 
+

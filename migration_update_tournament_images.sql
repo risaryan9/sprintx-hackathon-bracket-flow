@@ -81,3 +81,4 @@ FROM public.tournaments
 GROUP BY sport, image_url
 ORDER BY sport, image_url;
 
+

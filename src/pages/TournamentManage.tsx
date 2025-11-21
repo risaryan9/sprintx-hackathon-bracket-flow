@@ -8,12 +8,14 @@ import { generateFixtures, generateNextRoundFixtures } from "@/services/fixtures
 import { getTournamentMatchesForBracket } from "@/services/bracket";
 import { MatchList } from "@/components/MatchList";
 import { FixtureView } from "@/components/FixtureView";
+import { TournamentBracket } from "@/components/TournamentBracket";
 import { getCurrentRound, areAllMatchesCompleted } from "@/services/matches";
 import { Entry } from "@/types/match";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -504,26 +506,37 @@ const TournamentManage = () => {
                   Retry
                 </Button>
               </div>
-            ) : (
-              <div className="space-y-8">
-                {/* Fixture View - Separated by Court Assignment */}
-                <FixtureView
-                  matches={matches}
-                  tournamentId={tournamentId || ""}
-                  currentRound={currentRound || null}
-                />
-                
-                {/* Optional: Keep MatchList for detailed view with filters */}
-                {/* Uncomment below if you want both views available */}
-                {/* 
-                <div className="mt-12">
-                  <MatchList 
-                    matches={matches} 
-                    tournamentId={tournamentId || ""} 
-                    currentRound={currentRound || null}
-                  />
-                </div>
-                */}
+            ) : tournament && (
+              <div className="max-w-7xl mx-auto px-4">
+                <Tabs defaultValue={tournament.format === "knockouts" || tournament.format === "double_elimination" ? "bracket" : "fixtures"} className="w-full">
+                  <TabsList className="grid w-full max-w-md grid-cols-2 mb-6 bg-black/30 border border-white/10">
+                    {(tournament.format === "knockouts" || tournament.format === "double_elimination") && (
+                      <TabsTrigger value="bracket" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
+                        Bracket View
+                      </TabsTrigger>
+                    )}
+                    <TabsTrigger value="fixtures" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
+                      Fixture View
+                    </TabsTrigger>
+                  </TabsList>
+                  
+                  {(tournament.format === "knockouts" || tournament.format === "double_elimination") && (
+                    <TabsContent value="bracket" className="mt-0">
+                      <TournamentBracket 
+                        matches={matches} 
+                        tournamentFormat={tournament.format}
+                      />
+                    </TabsContent>
+                  )}
+                  
+                  <TabsContent value="fixtures" className="mt-0">
+                    <FixtureView
+                      matches={matches}
+                      tournamentId={tournamentId || ""}
+                      currentRound={currentRound || null}
+                    />
+                  </TabsContent>
+                </Tabs>
               </div>
             )}
           </section>

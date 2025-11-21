@@ -95,3 +95,4 @@ WHERE image_url IS NULL
    OR (image_url NOT LIKE '/%%.png' AND image_url NOT LIKE '/assets/%')
 ORDER BY name;
 
+
