@@ -25,9 +25,11 @@ export const FixtureView = ({
 }: FixtureViewProps) => {
   // Separate matches into current batch (with courts) and upcoming (without courts or later)
   const { currentBatch, upcomingMatches } = useMemo(() => {
-    // Get all matches with court assignments
+    // Get all matches with court assignments or current round
     const matchesWithCourts = matches.filter(
-      (m) => m.court_id && m.court_name && !m.is_completed
+      (m) =>
+        (m.court_id && m.court_name && !m.is_completed) ||
+        (currentRound && m.round === currentRound && !m.is_completed)
     );
 
     if (matchesWithCourts.length === 0) {
@@ -48,25 +50,31 @@ export const FixtureView = ({
 
     // Get matches scheduled at the earliest time (current batch)
     const currentBatchMatches: CourtMatch[] = [];
-    const courtMap = new Map<string, BracketMatch>();
+    const seenCourts = new Set<string>();
 
     matchesWithCourts.forEach((match) => {
-      if (match.court_id && match.court_name) {
-        // Include if it's at the earliest time or if no time filtering needed
-        const matchTime = match.scheduled_time
-          ? new Date(match.scheduled_time).getTime()
-          : null;
-        const isEarliest =
-          !earliestTime ||
-          !matchTime ||
-          matchTime === earliestTime ||
-          Math.abs(matchTime - earliestTime) < 60000; // Within 1 minute
+      const matchTime = match.scheduled_time
+        ? new Date(match.scheduled_time).getTime()
+        : null;
+      const isEarliest =
+        !earliestTime ||
+        !matchTime ||
+        matchTime === earliestTime ||
+        Math.abs(matchTime - earliestTime) < 60000; // Within 1 minute
 
-        if (isEarliest && !courtMap.has(match.court_id)) {
-          courtMap.set(match.court_id, match);
+      const useMatch =
+        (match.court_id && match.court_name && isEarliest) ||
+        (!match.court_id && currentRound && match.round === currentRound);
+
+      if (useMatch) {
+        const courtId = match.court_id || `virtual-${match.id}`;
+        const courtName = match.court_name || `Match ${match.match_order ?? ""}`.trim();
+
+        if (!seenCourts.has(courtId)) {
+          seenCourts.add(courtId);
           currentBatchMatches.push({
-            courtId: match.court_id,
-            courtName: match.court_name,
+            courtId,
+            courtName: courtName || "Court TBD",
             match,
           });
         }
