@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2, Gavel, MapPin, Clock, Trophy } from "lucide-react";
+import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2, Gavel, MapPin, Clock, Trophy, Sparkles } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { getTournamentById, getTournamentEntriesCount, getTournamentEntries, getTournamentCourts, getTournamentUmpires } from "@/services/tournaments";
@@ -17,6 +17,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { calculateIdleStatusWithMatch, MatchForIdleCalc } from "@/utils/idleCalculations";
@@ -29,6 +31,7 @@ const TournamentManage = () => {
   const queryClient = useQueryClient();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [aiModeEnabled, setAiModeEnabled] = useState(false);
 
   const { data: tournament, isLoading, isError } = useQuery({
     queryKey: ["tournament", tournamentId],
@@ -624,32 +627,54 @@ const TournamentManage = () => {
 
                     {/* Generate Fixtures Button - Only show if no matches exist */}
                     {!hasMatches && (
-                      <div className="flex justify-center mt-6">
-                        <Button
-                          className={`${
-                            isMaxEntriesReached
-                              ? "button-gradient"
-                              : "bg-gray-600/50 text-gray-400 cursor-not-allowed hover:bg-gray-600/50"
-                          }`}
-                          onClick={() => generateFixturesMutation.mutate()}
-                          disabled={!isMaxEntriesReached || generateFixturesMutation.isPending}
-                        >
-                          {generateFixturesMutation.isPending ? (
-                            <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Generating...
-                            </>
-                          ) : (
-                            <>
-                              Generate Fixtures
-                              {!isMaxEntriesReached && (
-                                <span className="ml-2 text-xs">
-                                  ({tournament.max_entries - entriesCount} more needed)
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </Button>
+                      <div className="flex flex-col items-center gap-4 mt-6">
+                        <div className="flex items-center gap-4">
+                          <Button
+                            className={`${
+                              isMaxEntriesReached
+                                ? "button-gradient"
+                                : "bg-gray-600/50 text-gray-400 cursor-not-allowed hover:bg-gray-600/50"
+                            }`}
+                            onClick={() => generateFixturesMutation.mutate()}
+                            disabled={!isMaxEntriesReached || generateFixturesMutation.isPending}
+                          >
+                            {generateFixturesMutation.isPending ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                Generate Fixtures
+                                {!isMaxEntriesReached && (
+                                  <span className="ml-2 text-xs">
+                                    ({tournament.max_entries - entriesCount} more needed)
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </Button>
+                          
+                          <div className="flex items-center gap-3 px-4 py-2 rounded-lg border border-white/10 bg-black/30">
+                            <Switch
+                              id="ai-mode"
+                              checked={aiModeEnabled}
+                              onCheckedChange={setAiModeEnabled}
+                            />
+                            <Label
+                              htmlFor="ai-mode"
+                              className="text-sm font-medium text-foreground cursor-pointer flex items-center gap-2"
+                            >
+                              <Sparkles className="h-4 w-4 text-primary" />
+                              AI Mode
+                            </Label>
+                          </div>
+                        </div>
+                        {aiModeEnabled && (
+                          <p className="text-xs text-muted-foreground text-center">
+                            AI-powered scheduling will optimize match assignments and court utilization
+                          </p>
+                        )}
                       </div>
                     )}
                     {generateFixturesMutation.data && generateFixturesMutation.data.status === "ok" && (
