@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Command, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
@@ -71,7 +71,11 @@ const Navigation = () => {
       <div className="mx-auto h-full px-6">
         <nav className="flex items-center justify-between h-full">
           <div className="flex items-center gap-2">
-            <Command className="w-5 h-5 text-primary" />
+            <img 
+              src="/bracketflow-logo.png" 
+              alt="BracketFlow Logo" 
+              className="w-5 h-5"
+            />
             <span className="font-bold text-base">BracketFlow India</span>
           </div>
 
