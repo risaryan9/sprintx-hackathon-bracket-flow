@@ -24,3 +24,4 @@ WHERE tournament_id IS NULL;
 COMMENT ON COLUMN umpires.tournament_id IS 'UUID of the tournament this umpire is assigned to';
 
 
+
