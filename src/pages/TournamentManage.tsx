@@ -727,17 +727,25 @@ const TournamentManage = () => {
               </div>
             ) : tournament && (
               <div className="max-w-7xl mx-auto px-4">
-                <Tabs defaultValue={tournament.format === "knockouts" || tournament.format === "double_elimination" ? "bracket" : "fixtures"} className="w-full">
-                  <TabsList className="grid w-full max-w-md grid-cols-2 mb-6 bg-black/30 border border-white/10">
+                <Tabs defaultValue="fixtures" className="w-full">
+                  <TabsList className={`grid w-full max-w-md mb-6 bg-black/30 border border-white/10 ${(tournament.format === "knockouts" || tournament.format === "double_elimination") ? "grid-cols-2" : "grid-cols-1"}`}>
+                    <TabsTrigger value="fixtures" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
+                      Fixture View
+                    </TabsTrigger>
                     {(tournament.format === "knockouts" || tournament.format === "double_elimination") && (
                       <TabsTrigger value="bracket" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
                         Bracket View
                       </TabsTrigger>
                     )}
-                    <TabsTrigger value="fixtures" className="data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
-                      Fixture View
-                    </TabsTrigger>
                   </TabsList>
+                  
+                  <TabsContent value="fixtures" className="mt-0">
+                    <FixtureView
+                      matches={matches}
+                      tournamentId={tournamentId || ""}
+                      currentRound={currentRound || null}
+                    />
+                  </TabsContent>
                   
                   {(tournament.format === "knockouts" || tournament.format === "double_elimination") && (
                     <TabsContent value="bracket" className="mt-0">
@@ -747,14 +755,6 @@ const TournamentManage = () => {
                       />
                     </TabsContent>
                   )}
-                  
-                  <TabsContent value="fixtures" className="mt-0">
-                    <FixtureView
-                      matches={matches}
-                      tournamentId={tournamentId || ""}
-                      currentRound={currentRound || null}
-                    />
-                  </TabsContent>
                 </Tabs>
               </div>
             )}

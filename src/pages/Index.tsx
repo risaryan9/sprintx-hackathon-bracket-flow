@@ -72,7 +72,7 @@ const Index = () => {
         <div className="max-w-4xl mx-auto relative z-10 text-center">
           <h1 className="text-5xl md:text-7xl font-normal mb-4 tracking-tight">
             <span className="text-gray-200">
-              <TextGenerateEffect words="Run every Indian tournament" />
+              <TextGenerateEffect words="Run every tournament" />
             </span>
             <br />
             <span className="text-white font-medium">
@@ -149,10 +149,10 @@ const Index = () => {
           className="bg-[#0A0A0A]/80 backdrop-blur-lg border border-white/10 rounded-2xl p-8 md:p-12 text-center relative z-10"
         >
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Ready to automate your next Indian season?
+            Ready to automate your next season?
           </h2>
           <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-            Join organizers from the ISL to Khelo India who rely on BracketFlow to keep every match-day coordinated and on time.
+            Join organizers from the Xthlete to Khelo India who rely on BracketFlow to keep every match-day coordinated and on time.
           </p>
           <Button size="lg" className="button-gradient">
             Book a Demo
