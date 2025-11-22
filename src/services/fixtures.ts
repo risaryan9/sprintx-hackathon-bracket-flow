@@ -276,6 +276,18 @@ const assignCourtsAndUmpires = (
       }
 
       waveMatches.forEach((match) => {
+        // Skip BYE matches - they don't need courts, umpires, or scheduling
+        const isBye = match.entry1_id === null || match.entry2_id === null;
+        if (isBye) {
+          scheduled.push({
+            ...match,
+            scheduled_time: new Date(waveTime), // Keep time for ordering, but won't be used
+            court_id: null, // BYE matches don't need courts
+            umpire_id: null, // BYE matches don't need umpires
+          });
+          return; // Don't increment courtIndex for BYE matches
+        }
+
         const court = courts.length > 0 ? courts[courtIndex % courts.length] : null;
         
         // Get available umpires at this time
@@ -417,6 +429,20 @@ export const generateFixtures = async (
         warnings: [],
         error: `Entries count (${entries.length}) exceeds tournament max_entries (${tournament.max_entries})`,
       };
+    }
+
+    // Check minimum threshold (85% of max_entries, rounded up)
+    if (tournament.max_entries && tournament.max_entries > 0) {
+      const minimumRequired = Math.ceil(tournament.max_entries * 0.85);
+      if (entries.length < minimumRequired) {
+        return {
+          status: "error",
+          created: 0,
+          matches: [],
+          warnings: [],
+          error: `Not enough entries. Need at least ${minimumRequired} entries (85% of ${tournament.max_entries}) to generate fixtures. Currently have ${entries.length}.`,
+        };
+      }
     }
 
     // 4. Fetch players
@@ -601,6 +627,30 @@ export const generateFixtures = async (
       const isBye = match.entry1_id === null || match.entry2_id === null;
       const matchCode = generateMatchCode(tournamentId, index + 1);
 
+      // For BYE matches: automatically complete with winner, no court/umpire assignment
+      if (isBye) {
+        // Determine winner (the non-null entry)
+        const winnerEntryId = match.entry1_id || match.entry2_id;
+
+        return {
+          tournament_id: tournamentId,
+          round: match.round,
+          match_order: index + 1,
+          entry1_id: match.entry1_id,
+          entry2_id: match.entry2_id,
+          court_id: null, // BYE matches don't need courts
+          umpire_id: null, // BYE matches don't need umpires
+          scheduled_time: null, // BYE matches don't need scheduling
+          duration_minutes: tournament.match_duration_minutes,
+          rest_enforced: tournament.rest_time_minutes > 0,
+          match_code: matchCode,
+          code_valid: true,
+          winner_entry_id: winnerEntryId, // Auto-assign winner
+          is_completed: true, // Auto-complete BYE matches
+        };
+      }
+
+      // For regular matches: use normal scheduling
       // Format scheduled_time as timestamp without timezone (YYYY-MM-DD HH:MM:SS)
       const scheduledTimeStr = match.scheduled_time
         .toISOString()
@@ -1227,8 +1277,33 @@ export const generateNextRoundFixtures = async (
 
     // 12. Prepare match records
     const matchRecords = scheduledMatches.map((match, index) => {
+      const isBye = match.entry1_id === null || match.entry2_id === null;
       const matchCode = generateMatchCode(tournamentId, nextMatchOrder + index);
 
+      // For BYE matches: automatically complete with winner, no court/umpire assignment
+      if (isBye) {
+        // Determine winner (the non-null entry)
+        const winnerEntryId = match.entry1_id || match.entry2_id;
+
+        return {
+          tournament_id: tournamentId,
+          round: match.round,
+          match_order: nextMatchOrder + index,
+          entry1_id: match.entry1_id,
+          entry2_id: match.entry2_id,
+          court_id: null, // BYE matches don't need courts
+          umpire_id: null, // BYE matches don't need umpires
+          scheduled_time: null, // BYE matches don't need scheduling
+          duration_minutes: tournament.match_duration_minutes,
+          rest_enforced: tournament.rest_time_minutes > 0,
+          match_code: matchCode,
+          code_valid: true,
+          winner_entry_id: winnerEntryId, // Auto-assign winner
+          is_completed: true, // Auto-complete BYE matches
+        };
+      }
+
+      // For regular matches: use normal scheduling
       const scheduledTimeStr = match.scheduled_time
         .toISOString()
         .replace("T", " ")

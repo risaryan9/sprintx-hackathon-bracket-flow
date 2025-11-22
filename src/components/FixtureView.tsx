@@ -55,17 +55,23 @@ export const FixtureView = ({
   };
   // Separate matches into current batch (with courts) and upcoming (without courts or later)
   const { currentBatch, upcomingMatches } = useMemo(() => {
-    // Get all matches with court assignments or current round
+    // Filter out BYE matches (completed matches without courts/umpires) from active scheduling
+    // BYE matches are already completed and don't need to be shown in active batches
+    const isByeMatch = (m: BracketMatch) => 
+      (m.entry1_id === null || m.entry2_id === null) && m.is_completed;
+    
+    // Get all matches with court assignments or current round (excluding BYE matches)
     const matchesWithCourts = matches.filter(
       (m) =>
-        (m.court_id && m.court_name && !m.is_completed) ||
-        (currentRound && m.round === currentRound && !m.is_completed)
+        !isByeMatch(m) &&
+        ((m.court_id && m.court_name && !m.is_completed) ||
+        (currentRound && m.round === currentRound && !m.is_completed))
     );
 
     if (matchesWithCourts.length === 0) {
       return {
         currentBatch: [],
-        upcomingMatches: matches.filter((m) => !m.is_completed),
+        upcomingMatches: matches.filter((m) => !isByeMatch(m) && !m.is_completed),
       };
     }
 
@@ -115,11 +121,15 @@ export const FixtureView = ({
     currentBatchMatches.sort((a, b) => a.courtName.localeCompare(b.courtName));
 
     // Get remaining matches (those without courts or not in the current batch)
+    // Exclude BYE matches from upcoming (they're already completed)
     const currentBatchMatchIds = new Set(
       currentBatchMatches.map((c) => c.match.id)
     );
     const upcoming = matches.filter(
-      (match) => !match.is_completed && !currentBatchMatchIds.has(match.id)
+      (match) => 
+        !isByeMatch(match) &&
+        !match.is_completed && 
+        !currentBatchMatchIds.has(match.id)
     );
 
     // Sort upcoming matches by scheduled_time, then by match_order
@@ -481,6 +491,82 @@ export const FixtureView = ({
           </div>
         </div>
       )}
+
+      {/* Completed BYE Matches */}
+      {(() => {
+        const byeMatches = matches.filter(
+          (m) => (m.entry1_id === null || m.entry2_id === null) && m.is_completed
+        );
+        
+        if (byeMatches.length === 0) return null;
+        
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-semibold mb-1">BYE Matches</h2>
+                <p className="text-sm text-muted-foreground">
+                  Automatically completed matches (no opponent)
+                </p>
+              </div>
+              <Badge
+                variant="outline"
+                className="border-green-500/30 bg-green-500/10 text-green-400"
+              >
+                {byeMatches.length} {byeMatches.length === 1 ? "match" : "matches"}
+              </Badge>
+            </div>
+
+            <div className="space-y-3">
+              {byeMatches.map((match) => (
+                <Card
+                  key={match.id}
+                  className="glass border-green-500/20 bg-green-500/5 hover:border-green-500/40 transition-all duration-200"
+                >
+                  <CardContent className="p-4">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-semibold text-foreground">
+                              {match.entry1_name || match.entry2_name || "TBD"}
+                            </span>
+                            {match.winner_entry_id && (
+                              <Trophy className="h-4 w-4 text-green-400" />
+                            )}
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className="border-green-500/30 bg-green-500/10 text-green-400 text-xs"
+                          >
+                            BYE - Auto Winner
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
+                          {match.round && (
+                            <Badge
+                              variant="outline"
+                              className="border-primary/30 bg-primary/10 text-primary text-xs"
+                            >
+                              {match.round}
+                            </Badge>
+                          )}
+                          {match.match_order && (
+                            <span>Order: {match.match_order}</span>
+                          )}
+                        </div>
+                      </div>
+                      <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">
+                        Completed
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Empty State */}
       {currentBatch.length === 0 && upcomingMatches.length === 0 && (

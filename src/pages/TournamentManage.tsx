@@ -108,8 +108,18 @@ const TournamentManage = () => {
     staleTime: 1000 * 60 * 30, // Cache for 30 minutes
   });
 
-  const isMaxEntriesReached =
-    tournament && entriesCount >= tournament.max_entries;
+  // Calculate minimum required entries (85% of max_entries, rounded up)
+  const getMinimumRequiredEntries = (maxEntries: number | null): number => {
+    if (!maxEntries || maxEntries <= 0) return 2; // Default minimum
+    return Math.ceil(maxEntries * 0.85);
+  };
+
+  const minimumRequiredEntries = tournament 
+    ? getMinimumRequiredEntries(tournament.max_entries)
+    : 2;
+
+  const canGenerateFixtures =
+    tournament && entriesCount >= minimumRequiredEntries;
   const hasMatches = matches.length > 0;
   const isKnockout = tournament?.format === "knockouts";
 
@@ -358,15 +368,27 @@ const TournamentManage = () => {
                               {isLoadingEntries ? (
                                 <Loader2 className="h-4 w-4 animate-spin text-primary mt-1" />
                               ) : (
-                                <p className="text-2xl font-semibold">
-                                  {entriesCount} / {tournament.max_entries}
-                                </p>
+                                <div>
+                                  <p className="text-2xl font-semibold">
+                                    {entriesCount} / {tournament.max_entries}
+                                  </p>
+                                  {tournament.max_entries && tournament.max_entries > 0 && (
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      Minimum: {minimumRequiredEntries} (85%)
+                                    </p>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </div>
-                          {isMaxEntriesReached && (
+                          {tournament && entriesCount >= tournament.max_entries && (
                             <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
                               Full
+                            </Badge>
+                          )}
+                          {tournament && entriesCount >= minimumRequiredEntries && entriesCount < tournament.max_entries && (
+                            <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
+                              Ready
                             </Badge>
                           )}
                         </div>
@@ -715,16 +737,16 @@ const TournamentManage = () => {
 
                     {/* Generate Fixtures Button - Only show if no matches exist */}
                     {!hasMatches && (
-                      <div className="flex flex-col items-center gap-4 mt-6">
+                        <div className="flex flex-col items-center gap-4 mt-6">
                         <div className="flex items-center gap-4">
                           <Button
                             className={`${
-                              isMaxEntriesReached
+                              canGenerateFixtures
                                 ? "button-gradient"
                                 : "bg-gray-600/50 text-gray-400 cursor-not-allowed hover:bg-gray-600/50"
                             }`}
                             onClick={() => generateFixturesMutation.mutate()}
-                            disabled={!isMaxEntriesReached || generateFixturesMutation.isPending}
+                            disabled={!canGenerateFixtures || generateFixturesMutation.isPending}
                           >
                             {generateFixturesMutation.isPending ? (
                               <>
@@ -734,9 +756,9 @@ const TournamentManage = () => {
                             ) : (
                               <>
                                 Generate Fixtures
-                                {!isMaxEntriesReached && (
+                                {!canGenerateFixtures && tournament && (
                                   <span className="ml-2 text-xs">
-                                    ({tournament.max_entries - entriesCount} more needed)
+                                    ({minimumRequiredEntries - entriesCount} more needed)
                                   </span>
                                 )}
                               </>
