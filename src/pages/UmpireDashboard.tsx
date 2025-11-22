@@ -77,8 +77,8 @@ const UmpireDashboard = () => {
         autoUpdateIdleStatus().then(() => {
           queryClient.invalidateQueries({ queryKey: ["umpire-matches", submittedLicenseNo] });
           if (validatedMatch) {
-            // Refresh validated match
-            handleMatchCodeSubmit(matchCode);
+            // Refresh validated match (skip validation if already completed)
+            handleMatchCodeSubmit(matchCode, validatedMatch.is_completed || false);
           }
         });
       }
@@ -141,7 +141,7 @@ const UmpireDashboard = () => {
     }
   };
 
-  const handleMatchCodeSubmit = async (code: string) => {
+  const handleMatchCodeSubmit = async (code: string, skipValidation = false) => {
     if (!code.trim() || !umpireData) return;
 
     setValidatingMatchCode(true);
@@ -157,25 +157,55 @@ const UmpireDashboard = () => {
         return;
       }
 
-      // Validate the match code
-      const isValid = await validateMatchCode(match.id, code.trim());
-      
-      if (isValid) {
+      // Skip validation if match is already completed or if explicitly requested
+      if (skipValidation || match.is_completed) {
         setValidatedMatch(match);
         setMatchCodeError(null);
-        toast({
-          title: "Match code validated",
-          description: "You can now manage the match.",
-        });
+        if (!skipValidation) {
+          toast({
+            title: "Match loaded",
+            description: "Match information has been loaded.",
+          });
+        }
       } else {
-        setMatchCodeError("Invalid match code. Please try again.");
-        setValidatedMatch(null);
+        // Validate the match code only for non-completed matches
+        const isValid = await validateMatchCode(match.id, code.trim());
+        
+        if (isValid) {
+          setValidatedMatch(match);
+          setMatchCodeError(null);
+          toast({
+            title: "Match code validated",
+            description: "You can now manage the match.",
+          });
+        } else {
+          setMatchCodeError("Invalid match code. Please try again.");
+          setValidatedMatch(null);
+        }
       }
     } catch (err) {
-      setMatchCodeError(
-        err instanceof Error ? err.message : "Failed to validate match code."
-      );
-      setValidatedMatch(null);
+      // If validation fails, try to fetch the match again to check if it's completed
+      // If it's completed, we can still show it without validation
+      try {
+        const match = await getMatchByCode(code.trim(), umpireData.umpire.id);
+        if (match && (skipValidation || match.is_completed)) {
+          // If match is completed or we're skipping validation, show it anyway
+          setValidatedMatch(match);
+          setMatchCodeError(null);
+        } else {
+          // Otherwise, show the validation error
+          setMatchCodeError(
+            err instanceof Error ? err.message : "Failed to validate match code."
+          );
+          setValidatedMatch(null);
+        }
+      } catch (fetchError) {
+        // If we can't even fetch the match, show the original error
+        setMatchCodeError(
+          err instanceof Error ? err.message : "Failed to validate match code."
+        );
+        setValidatedMatch(null);
+      }
     } finally {
       setValidatingMatchCode(false);
     }
@@ -211,12 +241,14 @@ const UmpireDashboard = () => {
         scoreInput
       );
 
-      // Refresh match
-      await handleMatchCodeSubmit(matchCode);
+      // Refresh match without validation (since it's now completed)
+      await handleMatchCodeSubmit(matchCode, true);
       
-      // Clear validated match
-      setValidatedMatch(null);
-      setMatchCode("");
+      // Clear validated match and match code after showing success
+      setTimeout(() => {
+        setValidatedMatch(null);
+        setMatchCode("");
+      }, 2000);
 
       toast({
         title: "Match completed",
@@ -237,8 +269,8 @@ const UmpireDashboard = () => {
       await startMatch(matchId);
       setStartedMatches((prev) => new Set(prev).add(matchId));
       
-      // Refresh validated match
-      await handleMatchCodeSubmit(matchCode);
+      // Refresh validated match (skip validation if already completed)
+      await handleMatchCodeSubmit(matchCode, validatedMatch?.is_completed || false);
       
       toast({
         title: "Match Started",

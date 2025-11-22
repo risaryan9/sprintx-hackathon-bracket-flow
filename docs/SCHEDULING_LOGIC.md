@@ -446,9 +446,5 @@ bestUmpire = availableUmpires.reduce((best, current) => {
 
 ---
 
-## Related Documentation
 
-- [Fixture Logic](./FIXTURE_LOGIC.md) - How matches are generated
-- [Match Code Flow](./MATCH_CODE_FLOW.md) - Match code system
-- [Idle Tracking](./IDLE_TRACKING_IMPLEMENTATION.md) - Resource availability tracking
 

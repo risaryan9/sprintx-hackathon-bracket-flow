@@ -99,7 +99,7 @@ const Index = () => {
             className="text-lg md:text-xl text-gray-200 mb-8 max-w-2xl mx-auto"
           >
             Coordinate brackets, venues, officials, and live results across India from one intelligent workspace.{" "}
-            <span className="text-white">Deliver fair, drama-free competition from Guwahati to Goa.</span>
+            <span className="text-white">Deliver fair, drama-free competition.</span>
           </motion.p>
           
           <motion.div

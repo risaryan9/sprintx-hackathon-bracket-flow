@@ -6,35 +6,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-
-interface LeaderboardEntry {
-  rank: number;
-  playerName: string;
-  wins: number;
-  losses: number;
-  points: number;
-  matchesPlayed: number;
-}
+import { useQuery } from "@tanstack/react-query";
+import { getTournamentLeaderboard, LeaderboardEntry } from "@/services/tournaments";
 
 interface TournamentLeaderboardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   tournamentName: string;
+  tournamentId: string;
 }
-
-// Placeholder data
-const placeholderLeaderboard: LeaderboardEntry[] = [
-  { rank: 1, playerName: "Rajesh Kumar", wins: 8, losses: 0, points: 24, matchesPlayed: 8 },
-  { rank: 2, playerName: "Priya Sharma", wins: 7, losses: 1, points: 21, matchesPlayed: 8 },
-  { rank: 3, playerName: "Amit Patel", wins: 6, losses: 2, points: 18, matchesPlayed: 8 },
-  { rank: 4, playerName: "Sneha Reddy", wins: 6, losses: 2, points: 18, matchesPlayed: 8 },
-  { rank: 5, playerName: "Vikram Singh", wins: 5, losses: 3, points: 15, matchesPlayed: 8 },
-  { rank: 6, playerName: "Anjali Mehta", wins: 4, losses: 4, points: 12, matchesPlayed: 8 },
-  { rank: 7, playerName: "Rohit Verma", wins: 3, losses: 5, points: 9, matchesPlayed: 8 },
-  { rank: 8, playerName: "Kavya Nair", wins: 2, losses: 6, points: 6, matchesPlayed: 8 },
-  { rank: 9, playerName: "Arjun Desai", wins: 1, losses: 7, points: 3, matchesPlayed: 8 },
-  { rank: 10, playerName: "Meera Joshi", wins: 0, losses: 8, points: 0, matchesPlayed: 8 },
-];
 
 const getRankIcon = (rank: number) => {
   if (rank === 1) return <Crown className="h-5 w-5 text-yellow-400" />;
@@ -54,7 +34,23 @@ export const TournamentLeaderboard = ({
   open,
   onOpenChange,
   tournamentName,
+  tournamentId,
 }: TournamentLeaderboardProps) => {
+  const { data: leaderboard = [], isLoading, isError } = useQuery({
+    queryKey: ["tournament-leaderboard", tournamentId],
+    queryFn: () => getTournamentLeaderboard(tournamentId),
+    enabled: open && !!tournamentId,
+  });
+
+  // Calculate total matches (each match is counted twice, once per player)
+  const totalMatches = leaderboard.length > 0
+    ? Math.round(leaderboard.reduce((sum, entry) => sum + entry.matchesPlayed, 0) / 2)
+    : 0;
+
+  // Calculate total wins for win rate calculation
+  const totalWins = leaderboard.reduce((sum, entry) => sum + entry.wins, 0);
+  const winRate = totalMatches > 0 ? Math.round((totalWins / totalMatches) * 100) : 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-white/10 bg-black/95 backdrop-blur-xl max-w-3xl w-[90vw] max-h-[85vh] overflow-hidden flex flex-col p-0 shadow-2xl text-white">
@@ -87,64 +83,78 @@ export const TournamentLeaderboard = ({
           </div>
 
           {/* Leaderboard Entries */}
-          <div className="space-y-2">
-            {placeholderLeaderboard.map((entry) => (
-              <div
-                key={entry.rank}
-                className="grid grid-cols-12 gap-4 items-center px-4 py-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 hover:border-primary/30 transition-all duration-200"
-              >
-                {/* Rank */}
-                <div className="col-span-1 flex items-center gap-2">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary text-sm font-bold">
-                    {entry.rank}
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Loading leaderboard...
+            </div>
+          ) : isError ? (
+            <div className="text-center py-8 text-red-400">
+              Failed to load leaderboard
+            </div>
+          ) : leaderboard.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No completed matches yet
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {leaderboard.map((entry) => (
+                <div
+                  key={entry.rank}
+                  className="grid grid-cols-12 gap-4 items-center px-4 py-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 hover:border-primary/30 transition-all duration-200"
+                >
+                  {/* Rank */}
+                  <div className="col-span-1 flex items-center gap-2">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary text-sm font-bold">
+                      {entry.rank}
+                    </div>
+                    {getRankIcon(entry.rank)}
                   </div>
-                  {getRankIcon(entry.rank)}
-                </div>
 
-                {/* Player Name */}
-                <div className="col-span-5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-white">
-                      {entry.playerName}
+                  {/* Player Name */}
+                  <div className="col-span-5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-white">
+                        {entry.playerName}
+                      </span>
+                      {entry.rank <= 3 && (
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${getRankBadgeColor(entry.rank)}`}
+                        >
+                          {entry.rank === 1
+                            ? "Champion"
+                            : entry.rank === 2
+                            ? "Runner-up"
+                            : "Third Place"}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Wins */}
+                  <div className="col-span-2 text-center">
+                    <span className="text-sm font-semibold text-green-400">
+                      {entry.wins}
                     </span>
-                    {entry.rank <= 3 && (
-                      <Badge
-                        variant="outline"
-                        className={`text-xs ${getRankBadgeColor(entry.rank)}`}
-                      >
-                        {entry.rank === 1
-                          ? "Champion"
-                          : entry.rank === 2
-                          ? "Runner-up"
-                          : "Third Place"}
-                      </Badge>
-                    )}
+                  </div>
+
+                  {/* Losses */}
+                  <div className="col-span-2 text-center">
+                    <span className="text-sm font-semibold text-red-400">
+                      {entry.losses}
+                    </span>
+                  </div>
+
+                  {/* Points */}
+                  <div className="col-span-2 text-center">
+                    <span className="text-sm font-bold text-primary">
+                      {entry.points}
+                    </span>
                   </div>
                 </div>
-
-                {/* Wins */}
-                <div className="col-span-2 text-center">
-                  <span className="text-sm font-semibold text-green-400">
-                    {entry.wins}
-                  </span>
-                </div>
-
-                {/* Losses */}
-                <div className="col-span-2 text-center">
-                  <span className="text-sm font-semibold text-red-400">
-                    {entry.losses}
-                  </span>
-                </div>
-
-                {/* Points */}
-                <div className="col-span-2 text-center">
-                  <span className="text-sm font-bold text-primary">
-                    {entry.points}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Footer Stats */}
@@ -155,7 +165,7 @@ export const TournamentLeaderboard = ({
                 Total Players
               </p>
               <p className="text-lg font-semibold text-white">
-                {placeholderLeaderboard.length}
+                {leaderboard.length}
               </p>
             </div>
             <div>
@@ -163,10 +173,7 @@ export const TournamentLeaderboard = ({
                 Matches Played
               </p>
               <p className="text-lg font-semibold text-white">
-                {placeholderLeaderboard.reduce(
-                  (sum, entry) => sum + entry.matchesPlayed,
-                  0
-                )}
+                {totalMatches}
               </p>
             </div>
             <div>
@@ -174,18 +181,7 @@ export const TournamentLeaderboard = ({
                 Win Rate
               </p>
               <p className="text-lg font-semibold text-white">
-                {Math.round(
-                  (placeholderLeaderboard.reduce(
-                    (sum, entry) => sum + entry.wins,
-                    0
-                  ) /
-                    placeholderLeaderboard.reduce(
-                      (sum, entry) => sum + entry.matchesPlayed,
-                      0
-                    )) *
-                    100
-                )}
-                %
+                {winRate}%
               </p>
             </div>
           </div>

@@ -1014,6 +1014,7 @@ const TournamentManage = () => {
           open={leaderboardOpen}
           onOpenChange={setLeaderboardOpen}
           tournamentName={tournament.name}
+          tournamentId={tournament.id}
         />
       )}
 

@@ -16,6 +16,8 @@ export interface Match {
   is_completed: boolean | null;
   actual_start_time: string | null;
   awaiting_result: boolean | null;
+  entry1_score: number | null;
+  entry2_score: number | null;
   created_at: string | null;
   updated_at: string | null;
 }
