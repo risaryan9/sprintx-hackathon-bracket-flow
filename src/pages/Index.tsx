@@ -9,10 +9,20 @@ import Footer from "@/components/Footer";
 import { TextGenerateEffect } from "@/components/ui/text-generate-effect";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ParticleBackground } from "@/components/ParticleBackground";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+
+  const handleHostClick = () => {
+    if (isAuthenticated) {
+      navigate("/host");
+    } else {
+      navigate("/host/login");
+    }
+  };
 
   useEffect(() => {
     const state = location.state as { scrollTo?: string } | null;
@@ -156,8 +166,8 @@ const Index = () => {
           <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
             Join organizers from the Xthlete to Khelo India who rely on BracketFlow to keep every match-day coordinated and on time.
           </p>
-          <Button size="lg" className="button-gradient">
-            Book a Demo
+          <Button size="lg" className="button-gradient" onClick={handleHostClick}>
+            Host Your Own Tournament
             <ArrowRight className="ml-2 w-4 h-4" />
           </Button>
         </motion.div>
