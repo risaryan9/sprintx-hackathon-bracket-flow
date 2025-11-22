@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2, Gavel, MapPin, Clock, Trophy, Sparkles, CloudSun, AlertTriangle, CheckCircle } from "lucide-react";
+import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2, Gavel, MapPin, Clock, Trophy, Sparkles, CloudSun, AlertTriangle, CheckCircle, Phone } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { getTournamentById, getTournamentEntriesCount, getTournamentEntries, getTournamentCourts, getTournamentUmpires } from "@/services/tournaments";
@@ -23,10 +23,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { calculateIdleStatusWithMatch, MatchForIdleCalc } from "@/utils/idleCalculations";
 import { useState, useEffect, useMemo } from "react";
+import { supabase } from "@/lib/supabaseClient";
 
 const TournamentManage = () => {
   const { tournamentId } = useParams<{ tournamentId: string }>();
@@ -38,6 +40,7 @@ const TournamentManage = () => {
   const [weatherModalOpen, setWeatherModalOpen] = useState(false);
   const [aiModeEnabled, setAiModeEnabled] = useState(false);
   const [aiSummaryOpen, setAiSummaryOpen] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<Entry | null>(null);
 
   const { data: tournament, isLoading, isError } = useQuery({
     queryKey: ["tournament", tournamentId],
@@ -55,6 +58,55 @@ const TournamentManage = () => {
     queryKey: ["tournament-entries", tournamentId],
     queryFn: () => getTournamentEntries(tournamentId || ""),
     enabled: !!tournamentId,
+  });
+
+  // Fetch player and team names for entries
+  const entryIdsString = useMemo(() => {
+    if (!entries.length) return "";
+    const playerIds = entries.map(e => e.player_id).filter((id): id is string => id !== null);
+    const teamIds = entries.map(e => e.team_id).filter((id): id is string => id !== null);
+    return `${playerIds.join(",")}-${teamIds.join(",")}`;
+  }, [entries]);
+
+  const { data: entryDetails, isLoading: isLoadingEntryDetails } = useQuery({
+    queryKey: ["tournament-entry-details", tournamentId, entryIdsString],
+    queryFn: async () => {
+      if (!tournamentId || entries.length === 0) return { players: new Map(), teams: new Map() };
+      
+      const playerIds = entries.map(e => e.player_id).filter((id): id is string => id !== null);
+      const teamIds = entries.map(e => e.team_id).filter((id): id is string => id !== null);
+      
+      const [playersResult, teamsResult] = await Promise.all([
+        playerIds.length > 0
+          ? supabase.from("players").select("id, full_name, contact").in("id", playerIds)
+          : Promise.resolve({ data: [], error: null }),
+        teamIds.length > 0
+          ? supabase.from("teams").select("id, team_name").in("id", teamIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      const playersMap = new Map<string, { name: string; contact: string | null }>();
+      const teamsMap = new Map<string, { name: string }>();
+
+      if (playersResult.data && !playersResult.error) {
+        (playersResult.data as Array<{ id: string; full_name: string; contact: string | null }>).forEach((p) => {
+          if (p.full_name) {
+            playersMap.set(p.id, { name: p.full_name, contact: p.contact || null });
+          }
+        });
+      }
+
+      if (teamsResult.data && !teamsResult.error) {
+        (teamsResult.data as Array<{ id: string; team_name: string }>).forEach((t) => {
+          if (t.team_name) {
+            teamsMap.set(t.id, { name: t.team_name });
+          }
+        });
+      }
+
+      return { players: playersMap, teams: teamsMap };
+    },
+    enabled: !!tournamentId && entries.length > 0,
   });
 
   const { data: courts = [], isLoading: isLoadingCourts } = useQuery({
@@ -408,48 +460,70 @@ const TournamentManage = () => {
                             </p>
                           ) : (
                             <div className="space-y-2 overflow-y-auto custom-scrollbar pr-2" style={{ maxHeight: '600px' }}>
-                              {entries.map((entry, index) => (
-                                <div
-                                  key={entry.id}
-                                  className="flex items-center justify-between p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 transition-colors"
-                                >
-                                  <div className="flex items-center gap-3 flex-1">
-                                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary text-sm font-semibold">
-                                      {index + 1}
-                                    </div>
-                                    <div className="flex-1">
-                                      {entry.player_id ? (
-                                        <div className="flex items-center gap-2">
-                                          <User className="h-4 w-4 text-muted-foreground" />
-                                          <span className="text-sm font-medium">
-                                            Player: {entry.player_id.slice(0, 8)}...
-                                          </span>
-                                        </div>
-                                      ) : entry.team_id ? (
-                                        <div className="flex items-center gap-2">
-                                          <Users2 className="h-4 w-4 text-muted-foreground" />
-                                          <span className="text-sm font-medium">
-                                            Team: {entry.team_id.slice(0, 8)}...
-                                          </span>
-                                        </div>
-                                      ) : (
-                                        <span className="text-sm text-muted-foreground">
-                                          Entry #{index + 1}
-                                        </span>
-                                      )}
-                                      <p className="text-xs text-muted-foreground mt-1">
-                                        Registered: {format(new Date(entry.created_at), "MMM d, yyyy HH:mm")}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs border-white/10"
+                              {entries.map((entry, index) => {
+                                const playerName = entry.player_id && entryDetails?.players.get(entry.player_id)?.name;
+                                const teamName = entry.team_id && entryDetails?.teams.get(entry.team_id)?.name;
+                                const displayName = playerName || teamName || `Entry #${index + 1}`;
+                                const isLoadingName = isLoadingEntryDetails && (entry.player_id || entry.team_id);
+                                
+                                return (
+                                  <div
+                                    key={entry.id}
+                                    onClick={() => setSelectedEntry(entry)}
+                                    className="flex items-center justify-between p-3 rounded-lg border border-white/5 bg-white/5 hover:bg-white/10 hover:border-primary/30 transition-colors cursor-pointer"
                                   >
-                                    {entry.status || "Active"}
-                                  </Badge>
-                                </div>
-                              ))}
+                                    <div className="flex items-center gap-3 flex-1">
+                                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary text-sm font-semibold">
+                                        {index + 1}
+                                      </div>
+                                      <div className="flex-1">
+                                        {entry.player_id ? (
+                                          <div className="flex items-center gap-2">
+                                            <User className="h-4 w-4 text-muted-foreground" />
+                                            <span className="text-sm font-medium">
+                                              {isLoadingName ? (
+                                                <>
+                                                  <Loader2 className="h-3 w-3 animate-spin inline mr-1" />
+                                                  Loading...
+                                                </>
+                                              ) : (
+                                                playerName || "Unknown Player"
+                                              )}
+                                            </span>
+                                          </div>
+                                        ) : entry.team_id ? (
+                                          <div className="flex items-center gap-2">
+                                            <Users2 className="h-4 w-4 text-muted-foreground" />
+                                            <span className="text-sm font-medium">
+                                              {isLoadingName ? (
+                                                <>
+                                                  <Loader2 className="h-3 w-3 animate-spin inline mr-1" />
+                                                  Loading...
+                                                </>
+                                              ) : (
+                                                teamName || "Unknown Team"
+                                              )}
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <span className="text-sm text-muted-foreground">
+                                            Entry #{index + 1}
+                                          </span>
+                                        )}
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          Registered: {format(new Date(entry.created_at), "MMM d, yyyy HH:mm")}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs border-white/10"
+                                    >
+                                      {entry.status || "Active"}
+                                    </Badge>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -962,6 +1036,82 @@ const TournamentManage = () => {
           startDate={tournament.start_date}
         />
       )}
+
+      {/* Entry Details Modal */}
+      <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && setSelectedEntry(null)}>
+        <DialogContent className="border-white/10 bg-black/95 backdrop-blur-xl max-w-md shadow-2xl text-white">
+          <DialogHeader>
+            <DialogTitle className="text-xl text-white">Entry Details</DialogTitle>
+            <DialogDescription className="text-gray-300">
+              View detailed information about this entry
+            </DialogDescription>
+          </DialogHeader>
+          {selectedEntry && (
+            <div className="space-y-4 mt-4">
+              {/* Entry Type and Name */}
+              <div className="space-y-2">
+                {selectedEntry.player_id ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <User className="h-5 w-5 text-primary" />
+                      <span className="text-sm text-muted-foreground">Player</span>
+                    </div>
+                    <div className="pl-7">
+                      <p className="text-lg font-semibold text-white">
+                        {entryDetails?.players.get(selectedEntry.player_id)?.name || "Unknown Player"}
+                      </p>
+                      {entryDetails?.players.get(selectedEntry.player_id)?.contact && (
+                        <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                          <Phone className="h-4 w-4" />
+                          <span>{entryDetails.players.get(selectedEntry.player_id)!.contact}</span>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : selectedEntry.team_id ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Users2 className="h-5 w-5 text-primary" />
+                      <span className="text-sm text-muted-foreground">Team</span>
+                    </div>
+                    <div className="pl-7">
+                      <p className="text-lg font-semibold text-white">
+                        {entryDetails?.teams.get(selectedEntry.team_id)?.name || "Unknown Team"}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-lg font-semibold text-white">Entry #{entries.findIndex(e => e.id === selectedEntry.id) + 1}</p>
+                )}
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-white/10 my-4" />
+
+              {/* Entry Information */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Registered</span>
+                  <span className="text-sm text-white">{format(new Date(selectedEntry.created_at), "MMM d, yyyy HH:mm")}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Status</span>
+                  <Badge variant="outline" className="text-xs border-white/10">
+                    {selectedEntry.status || "Active"}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Payment Status</span>
+                  <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">
+                    <CheckCircle2 className="h-3 w-3 mr-1 inline" />
+                    Confirmed
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
