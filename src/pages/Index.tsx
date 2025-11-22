@@ -108,7 +108,7 @@ const Index = () => {
             transition={{ delay: 0.5 }}
             className="flex flex-col sm:flex-row gap-4 items-center justify-center"
           >
-            <Button size="lg" className="button-gradient">
+            <Button size="lg" className="button-gradient" onClick={handleHostClick}>
               Launch a Tournament
             </Button>
             <Button size="lg" variant="link" className="text-white" asChild>
