@@ -23,7 +23,7 @@ export const features = [
     title: "Event Health Insights",
     description: "Surface workload, fatigue, and weather alerts so directors can adapt before issues arise.",
     icon: <Activity className="w-6 h-6" />,
-    image: "/assets/images/tennis-stadium.png"
+    image: "/assets/images/event_health.png"
   },
   {
     title: "Player Tournament Discovery & Registration",
