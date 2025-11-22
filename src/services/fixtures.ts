@@ -9,6 +9,7 @@ import {
   GenerateFixturesOptions,
   GenerateFixturesResult,
 } from "@/types/match";
+import { getAISuggestedUmpire } from "./aiScheduling";
 
 // Helper: Compute next power of two
 const nextPowerOfTwo = (n: number): number => {
@@ -140,7 +141,7 @@ const generateMatchCode = (tournamentId: string, matchOrder: number): string => 
 };
 
 // Assign courts and umpires with rotation
-const assignCourtsAndUmpires = (
+const assignCourtsAndUmpires = async (
   matches: Array<{
     entry1_id: string | null;
     entry2_id: string | null;
@@ -153,15 +154,16 @@ const assignCourtsAndUmpires = (
   startTime: Date,
   slotDurationMinutes: number,
   batchSize: number,
-  respectClubNeutrality: boolean
-): Array<{
+  respectClubNeutrality: boolean,
+  tournament: Tournament
+): Promise<Array<{
   entry1_id: string | null;
   entry2_id: string | null;
   round: string;
   scheduled_time: Date;
   court_id: string | null;
   umpire_id: string | null;
-}> => {
+}>> => {
   const scheduled: Array<{
     entry1_id: string | null;
     entry2_id: string | null;
@@ -196,13 +198,15 @@ const assignCourtsAndUmpires = (
   };
 
   // Helper: Select best umpire (prioritize neutral, then least assigned)
-  const selectBestUmpire = (
+  // Optionally uses AI for minor assistance when multiple equally good options exist
+  const selectBestUmpire = async (
     availableUmpires: Umpire[],
     match: { entry1_id: string | null; entry2_id: string | null },
     entries: Entry[],
     players: Player[],
-    respectNeutrality: boolean
-  ): Umpire | null => {
+    respectNeutrality: boolean,
+    tournament: Tournament
+  ): Promise<Umpire | null> => {
     if (availableUmpires.length === 0) return null;
     if (availableUmpires.length === 1) return availableUmpires[0];
 
@@ -240,11 +244,47 @@ const assignCourtsAndUmpires = (
     let bestUmpire = availableUmpires[0];
     let minAssignments = umpireAssignmentCounts.get(bestUmpire.id) || 0;
 
+    // Find all umpires with minimum assignments (ties)
+    const candidatesWithMinAssignments: Umpire[] = [];
     for (const umpire of availableUmpires) {
       const assignments = umpireAssignmentCounts.get(umpire.id) || 0;
       if (assignments < minAssignments) {
-        bestUmpire = umpire;
         minAssignments = assignments;
+        candidatesWithMinAssignments.length = 0;
+        candidatesWithMinAssignments.push(umpire);
+        bestUmpire = umpire;
+      } else if (assignments === minAssignments) {
+        candidatesWithMinAssignments.push(umpire);
+      }
+    }
+
+    // If we have multiple equally good candidates (same assignment count), use AI for minor assistance
+    if (candidatesWithMinAssignments.length > 1) {
+      try {
+        const aiSuggestion = await getAISuggestedUmpire(
+          candidatesWithMinAssignments,
+          match,
+          entries,
+          players,
+          {
+            sport: tournament.sport,
+            format: tournament.format,
+            matchDuration: tournament.match_duration_minutes,
+          }
+        );
+
+        // Only use AI suggestion if confidence is reasonable and umpire is in candidates
+        if (aiSuggestion && aiSuggestion.confidence > 0.6) {
+          const suggestedUmpire = candidatesWithMinAssignments.find(
+            (u) => u.id === aiSuggestion.umpireId
+          );
+          if (suggestedUmpire) {
+            return suggestedUmpire;
+          }
+        }
+      } catch (error) {
+        // Fail silently - use existing logic
+        console.debug("AI umpire suggestion unavailable, using standard logic");
       }
     }
 
@@ -275,7 +315,8 @@ const assignCourtsAndUmpires = (
         umpireSchedule.set(timeKey, new Set<string>());
       }
 
-      waveMatches.forEach((match) => {
+      // Process matches sequentially to handle async AI calls
+      for (const match of waveMatches) {
         // Skip BYE matches - they don't need courts, umpires, or scheduling
         const isBye = match.entry1_id === null || match.entry2_id === null;
         if (isBye) {
@@ -285,7 +326,7 @@ const assignCourtsAndUmpires = (
             court_id: null, // BYE matches don't need courts
             umpire_id: null, // BYE matches don't need umpires
           });
-          return; // Don't increment courtIndex for BYE matches
+          continue; // Don't increment courtIndex for BYE matches
         }
 
         const court = courts.length > 0 ? courts[courtIndex % courts.length] : null;
@@ -294,12 +335,14 @@ const assignCourtsAndUmpires = (
         const availableUmpires = getAvailableUmpires(waveTime);
         
         // Select best umpire (neutral if possible, then least assigned)
-        const umpire = selectBestUmpire(
+        // AI assistance is used only when multiple equally good options exist
+        const umpire = await selectBestUmpire(
           availableUmpires,
           match,
           entries,
           players,
-          respectClubNeutrality
+          respectClubNeutrality,
+          tournament
         );
 
         // Assign umpire to this time slot
@@ -317,7 +360,7 @@ const assignCourtsAndUmpires = (
         });
 
         courtIndex++;
-      });
+      }
 
       waveIndex++;
     }
@@ -610,7 +653,7 @@ export const generateFixtures = async (
     }
 
     // 9. Assign courts and umpires
-    const scheduledMatches = assignCourtsAndUmpires(
+    const scheduledMatches = await assignCourtsAndUmpires(
       pairings,
       courts as Court[],
       umpires as Umpire[],
@@ -619,7 +662,8 @@ export const generateFixtures = async (
       startTime,
       slotDurationMinutes,
       batchSize,
-      respect_club_neutrality
+      respect_club_neutrality,
+      tournament
     );
 
     // 10. Prepare match records
@@ -1249,7 +1293,7 @@ export const generateNextRoundFixtures = async (
     }
 
     // 10. Assign courts and umpires
-    const scheduledMatches = assignCourtsAndUmpires(
+    const scheduledMatches = await assignCourtsAndUmpires(
       pairings,
       courts as Court[],
       umpires as Umpire[],
@@ -1258,7 +1302,8 @@ export const generateNextRoundFixtures = async (
       startTime,
       slotDurationMinutes,
       batchSize,
-      respect_club_neutrality
+      respect_club_neutrality,
+      tournament
     );
 
     // 11. Get highest match_order to continue numbering

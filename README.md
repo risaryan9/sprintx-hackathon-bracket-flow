@@ -131,10 +131,12 @@ Detailed technical documentation explaining the core algorithms and system archi
    VITE_SUPABASE_URL=your_supabase_project_url
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
    VITE_ORGANIZER_PASSKEY=pass123456
+   VITE_GEMINI_KEY=your_gemini_api_key
    ```
    
    - You can find the Supabase values in your Supabase project settings under API.
    - `VITE_ORGANIZER_PASSKEY` is the password for the organizer portal login (username: `Xthlete`).
+   - `VITE_GEMINI_KEY` is optional but recommended for AI-assisted scheduling optimizations. Get your API key from [Google AI Studio](https://makersuite.google.com/app/apikey). If not provided, the system will work without AI assistance.
 
 4. **Run database migrations** (if applicable)
    
