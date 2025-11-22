@@ -110,7 +110,7 @@ Detailed technical documentation explaining the core algorithms and system archi
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd crypto-trade-template-main
+   cd bracketflow_project
    ```
 
 2. **Install dependencies**
@@ -210,11 +210,19 @@ The project is configured for deployment on Vercel. See [VERCEL_DEPLOYMENT.md](.
 
 ## 🤝 Contributing
 
-This is a hackathon project. For contributions or questions, please refer to the repository issues or contact the maintainers.
+Thanks to SprintX Hackathon for giving me this opportunity :)
 
-## 📄 License
+## 🚀 Future Features
 
-This project was created for the SprintX Hackathon. Please refer to the repository for license information.
+The following features are planned for future releases:
+
+1. **Club Registration Portal** - A dedicated portal for clubs to register and manage their teams and players directly through the platform.
+
+2. **Multi-Event Registration** - Players will be able to register for multiple events (U18, Singles, Doubles) under the same tournament with a streamlined registration process.
+
+3. **Automatic Schedule Adjustment** - Intelligent rescheduling system that automatically adjusts match schedules in case of weather obstructions or other unforeseen circumstances, ensuring minimal disruption to tournament flow.
+
+4. **Automated Match Code Delivery** - Match codes will be automatically sent directly to umpire phone numbers via SMS when match fixtures are generated, eliminating manual communication overhead.
 
 ## 🙏 Acknowledgments
 
