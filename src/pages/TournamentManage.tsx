@@ -89,7 +89,7 @@ const TournamentManage = () => {
       const teamsMap = new Map<string, { name: string }>();
 
       if (playersResult.data && !playersResult.error) {
-        (playersResult.data as Array<{ id: string; full_name: string; contact: string | null }>).forEach((p) => {
+        playersResult.data.forEach((p: any) => {
           if (p.full_name) {
             playersMap.set(p.id, { name: p.full_name, contact: p.contact || null });
           }
@@ -97,7 +97,7 @@ const TournamentManage = () => {
       }
 
       if (teamsResult.data && !teamsResult.error) {
-        (teamsResult.data as Array<{ id: string; team_name: string }>).forEach((t) => {
+        teamsResult.data.forEach((t: any) => {
           if (t.team_name) {
             teamsMap.set(t.id, { name: t.team_name });
           }
