@@ -59,12 +59,7 @@ export const registerIndividualEntry = async (
 
   const playerInput = {
     full_name: sanitizeName(payload.playerName),
-    contact: buildContactString([
-      `Phone: ${payload.contactNumber}`,
-      `Email: ${payload.email}`,
-      payload.collegeOrClub ? `Club: ${payload.collegeOrClub}` : null,
-      payload.age ? `Age: ${payload.age}` : null,
-    ]),
+    contact: payload.contactNumber || null,
     club_id: null,
     dob: payload.dob ? payload.dob : null,
     gender: payload.gender || null,
@@ -86,7 +81,7 @@ export const registerIndividualEntry = async (
       tournament_id: tournament.id,
       player_id: player.id,
       team_id: null,
-      entry_type: "individual",
+      entry_type: "solo",
     })
     .select()
     .single();
@@ -126,11 +121,7 @@ export const registerTeamEntry = async (
     throw new Error("Please provide names for all players.");
   }
 
-  const contactString = buildContactString([
-    `Captain: ${payload.captainName}`,
-    `Phone: ${payload.contactNumber}`,
-    `Email: ${payload.email}`,
-  ]);
+  const contactString = payload.contactNumber || null;
 
   const { data: team, error: teamError } = await supabase
     .from("teams")
