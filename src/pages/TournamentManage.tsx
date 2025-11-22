@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2, Gavel, MapPin, Clock, Trophy, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2, Gavel, MapPin, Clock, Trophy, Sparkles, CloudSun, AlertTriangle, CheckCircle } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { getTournamentById, getTournamentEntriesCount, getTournamentEntries, getTournamentCourts, getTournamentUmpires } from "@/services/tournaments";
@@ -11,6 +11,9 @@ import { FixtureView } from "@/components/FixtureView";
 import { TournamentBracket } from "@/components/TournamentBracket";
 import { TournamentLeaderboard } from "@/components/TournamentLeaderboard";
 import { AISummaryModal } from "@/components/AISummaryModal";
+import { WeatherModal } from "@/components/WeatherModal";
+import { getDailyWeatherForDate } from "@/services/weather";
+import { getWeatherConditionSummary } from "@/utils/weatherAlerts";
 import { getCurrentRound, areAllMatchesCompleted } from "@/services/matches";
 import { Entry } from "@/types/match";
 import { Button } from "@/components/ui/button";
@@ -32,6 +35,7 @@ const TournamentManage = () => {
   const queryClient = useQueryClient();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [weatherModalOpen, setWeatherModalOpen] = useState(false);
   const [aiModeEnabled, setAiModeEnabled] = useState(false);
   const [aiSummaryOpen, setAiSummaryOpen] = useState(false);
 
@@ -93,6 +97,15 @@ const TournamentManage = () => {
       }
     },
     enabled: !!tournamentId && !!currentRound && !!tournament && tournament.format === "knockouts",
+  });
+
+  // Fetch weather data for tournament start date
+  const { data: weatherData, isLoading: isLoadingWeather } = useQuery({
+    queryKey: ["weather-forecast", tournament?.start_date],
+    queryFn: () => getDailyWeatherForDate(tournament!.start_date),
+    enabled: !!tournament?.start_date,
+    retry: 2,
+    staleTime: 1000 * 60 * 30, // Cache for 30 minutes
   });
 
   const isMaxEntriesReached =
@@ -603,26 +616,99 @@ const TournamentManage = () => {
                           )}
                         </div>
 
-                        {/* Tournament Leaderboard */}
-                        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
-                          <div className="flex items-center gap-3 mb-3">
-                            <Trophy className="h-4 w-4 text-primary" />
-                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                              Leaderboard
-                            </h3>
+                        {/* Tournament Leaderboard and Weather - Side by Side */}
+                        <div className="flex gap-4">
+                          {/* Tournament Leaderboard */}
+                          <div className="rounded-xl border border-white/10 bg-black/30 p-4 flex-1">
+                            <div className="flex items-center gap-3 mb-3">
+                              <Trophy className="h-4 w-4 text-primary" />
+                              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                Leaderboard
+                              </h3>
+                            </div>
+                            <p className="text-xs text-muted-foreground mb-2">
+                              View the current standings for this tournament
+                            </p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setLeaderboardOpen(true)}
+                              className="w-full h-9 text-sm border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/50 transition-all"
+                            >
+                              <Trophy className="h-4 w-4 mr-2" />
+                              View Leaderboard
+                            </Button>
                           </div>
-                          <p className="text-xs text-muted-foreground mb-2">
-                            View the current standings for  this tournament
-                          </p>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setLeaderboardOpen(true)}
-                            className="w-full h-9 text-sm border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/50 transition-all"
-                          >
-                            <Trophy className="h-4 w-4 mr-2" />
-                            View Leaderboard
-                          </Button>
+
+                          {/* Weather Forecast */}
+                          <div className="rounded-xl border border-white/10 bg-black/30 p-4 flex-1">
+                            <div className="flex items-center gap-3 mb-3">
+                              <CloudSun className="h-4 w-4 text-primary" />
+                              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                Weather
+                              </h3>
+                            </div>
+                            <p className="text-xs text-muted-foreground mb-3">
+                              Check the weather forecast for the event
+                            </p>
+
+                            {/* Weather Alerts Badges */}
+                            {isLoadingWeather ? (
+                              <div className="flex items-center justify-center py-2 mb-3">
+                                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                              </div>
+                            ) : weatherData && weatherData.alerts ? (
+                              <div className="space-y-2 mb-3">
+                                {(() => {
+                                  const alerts = weatherData.alerts || [];
+                                  const summary = getWeatherConditionSummary(alerts);
+                                  const criticalAlerts = alerts.filter(a => a.severity === "critical");
+                                  const warningAlerts = alerts.filter(a => a.severity === "warning");
+
+                                  if (alerts.length === 0) {
+                                    return (
+                                      <Badge className="w-full justify-center bg-green-500/20 text-green-400 border-green-500/50 py-1.5">
+                                        <CheckCircle className="h-3 w-3 mr-1.5" />
+                                        No Weather Alerts
+                                      </Badge>
+                                    );
+                                  }
+
+                                  return (
+                                    <>
+                                      {criticalAlerts.length > 0 && (
+                                        <Badge className="w-full justify-center bg-red-500/20 text-red-400 border-red-500/50 py-1.5">
+                                          <AlertCircle className="h-3 w-3 mr-1.5" />
+                                          {criticalAlerts.length} Critical Alert{criticalAlerts.length > 1 ? "s" : ""}
+                                        </Badge>
+                                      )}
+                                      {warningAlerts.length > 0 && (
+                                        <Badge className="w-full justify-center bg-yellow-500/20 text-yellow-400 border-yellow-500/50 py-1.5">
+                                          <AlertTriangle className="h-3 w-3 mr-1.5" />
+                                          {warningAlerts.length} Warning{warningAlerts.length > 1 ? "s" : ""}
+                                        </Badge>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            ) : (
+                              <Badge className="w-full justify-center bg-green-500/20 text-green-400 border-green-500/50 py-1.5 mb-3">
+                                <CheckCircle className="h-3 w-3 mr-1.5" />
+                                No Weather Alerts
+                              </Badge>
+                            )}
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setWeatherModalOpen(true)}
+                              className="w-full h-9 text-sm border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/50 transition-all"
+                            >
+                              <CloudSun className="h-4 w-4 mr-2" />
+                              View Forecast
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -842,6 +928,16 @@ const TournamentManage = () => {
           onOpenChange={setAiSummaryOpen}
           matches={matches}
           tournament={tournament}
+        />
+      )}
+
+      {/* Weather Modal */}
+      {tournament && (
+        <WeatherModal
+          open={weatherModalOpen}
+          onOpenChange={setWeatherModalOpen}
+          tournamentName={tournament.name}
+          startDate={tournament.start_date}
         />
       )}
     </div>

@@ -119,6 +119,14 @@ export interface Umpire {
   full_name: string;
   contact: string | null;
   license_no: string | null;
+  email: string | null;
+  gender: "male" | "female" | "other" | null;
+  age: number | null;
+  experience_years: number | null;
+  certification_level: "national" | "state" | "international" | null;
+  association: string | null;
+  bio: string | null;
+  sports_expertise: string | null; // JSON array or comma-separated string
   created_at: string;
   is_idle: boolean;
   last_assigned_start_time: string | null;
