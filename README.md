@@ -2,6 +2,8 @@
 
 A comprehensive tournament management system designed for Indian sports organizers, featuring automated fixture generation, intelligent scheduling, and real-time match management. Built with modern web technologies to streamline tournament operations from registration to completion.
 
+> **✅ Deliverables Status:** All required deliverables have been achieved in the deployed version. Additionally, several extra features have been implemented to enhance the platform's functionality and user experience.
+
 ## 🚀 Live Deployment
 
 The platform is live and accessible at: **[https://sprintx-hackathon-bracket-flow.vercel.app/](https://sprintx-hackathon-bracket-flow.vercel.app/)**
@@ -128,9 +130,11 @@ Detailed technical documentation explaining the core algorithms and system archi
    ```env
    VITE_SUPABASE_URL=your_supabase_project_url
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+   VITE_ORGANIZER_PASSKEY=pass123456
    ```
    
-   You can find these values in your Supabase project settings under API.
+   - You can find the Supabase values in your Supabase project settings under API.
+   - `VITE_ORGANIZER_PASSKEY` is the password for the organizer portal login (username: `Xthlete`).
 
 4. **Run database migrations** (if applicable)
    

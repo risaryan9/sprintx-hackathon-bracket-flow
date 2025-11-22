@@ -10,7 +10,11 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const ORGANIZER_USERNAME = "Xthlete";
-const ORGANIZER_PASSWORD = "pass123";
+const ORGANIZER_PASSWORD = import.meta.env.VITE_ORGANIZER_PASSKEY || "";
+
+if (!ORGANIZER_PASSWORD) {
+  console.warn("VITE_ORGANIZER_PASSKEY is not set in environment variables");
+}
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Initialize from localStorage synchronously to avoid race conditions

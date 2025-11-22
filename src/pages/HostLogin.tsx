@@ -30,7 +30,8 @@ const HostLogin = () => {
     setError("");
 
     if (isRegistering) {
-      if (username === "Xthlete" && password === "pass123") {
+      const organizerPasskey = import.meta.env.VITE_ORGANIZER_PASSKEY || "";
+      if (username === "Xthlete" && password === organizerPasskey) {
         if (login(username, password)) {
           navigate("/host");
         } else {
