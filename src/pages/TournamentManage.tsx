@@ -717,14 +717,16 @@ const TournamentManage = () => {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={() => setAiSummaryOpen(true)}
-                    className="border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/50"
-                  >
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    AI Summary
-                  </Button>
+                  {aiModeEnabled && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setAiSummaryOpen(true)}
+                      className="border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/50"
+                    >
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      AI Summary
+                    </Button>
+                  )}
                   {isKnockout && currentRound && (
                     <Button
                       className={`${

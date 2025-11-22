@@ -491,7 +491,8 @@ export const generateFixtures = async (
     // 6. Fetch umpires
     const { data: umpires, error: umpiresError } = await supabase
       .from("umpires")
-      .select("*");
+      .select("*")
+      .eq("tournament_id", tournamentId);
 
     if (umpiresError) {
       return {
@@ -1117,7 +1118,8 @@ export const generateNextRoundFixtures = async (
 
     const { data: umpires, error: umpiresError } = await supabase
       .from("umpires")
-      .select("*");
+      .select("*")
+      .eq("tournament_id", tournamentId);
 
     if (umpiresError) {
       return {

@@ -115,6 +115,7 @@ export const getTournamentCourts = async (tournamentId: string): Promise<Court[]
 
 export interface Umpire {
   id: string;
+  tournament_id: string | null;
   full_name: string;
   contact: string | null;
   license_no: string | null;
@@ -125,33 +126,11 @@ export interface Umpire {
 }
 
 export const getTournamentUmpires = async (tournamentId: string): Promise<Umpire[]> => {
-  // First, get all matches for this tournament to find assigned umpires
-  const { data: matches, error: matchesError } = await supabase
-    .from("matches")
-    .select("umpire_id")
-    .eq("tournament_id", tournamentId)
-    .not("umpire_id", "is", null);
-
-  if (matchesError) {
-    throw new Error(`Failed to fetch matches: ${matchesError.message}`);
-  }
-
-  if (!matches || matches.length === 0) {
-    return [];
-  }
-
-  // Extract unique umpire IDs
-  const umpireIds = Array.from(new Set(matches.map((m: any) => m.umpire_id).filter(Boolean)));
-
-  if (umpireIds.length === 0) {
-    return [];
-  }
-
-  // Fetch umpire details
+  // Fetch umpires directly by tournament_id (similar to how courts are fetched)
   const { data: umpires, error: umpiresError } = await supabase
     .from("umpires")
     .select("*")
-    .in("id", umpireIds)
+    .eq("tournament_id", tournamentId)
     .order("full_name", { ascending: true });
 
   if (umpiresError) {
