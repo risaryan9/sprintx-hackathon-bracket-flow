@@ -1,16 +1,152 @@
 import { supabase } from "@/lib/supabaseClient";
 import { BracketMatch } from "@/types/bracket";
 
+import { Umpire } from "@/services/tournaments";
+
 export interface UmpireWithMatches {
-  umpire: {
-    id: string;
-    full_name: string;
-    license_no: string | null;
-  };
+  umpire: Umpire;
   matches: BracketMatch[];
   tournamentNames: Record<string, string>;
   tournamentSports: Record<string, string>;
 }
+
+/**
+ * Get match by match code and verify it's assigned to the umpire
+ */
+export const getMatchByCode = async (
+  matchCode: string,
+  umpireId: string
+): Promise<BracketMatch | null> => {
+  const { data: matchData, error: matchError } = await supabase
+    .from("matches")
+    .select("*")
+    .eq("match_code", matchCode)
+    .eq("umpire_id", umpireId)
+    .single();
+
+  if (matchError || !matchData) {
+    return null;
+  }
+
+  // Fetch related data (tournament, entries, court, etc.)
+  const [tournamentResult, entriesResult, courtResult] = await Promise.all([
+    matchData.tournament_id
+      ? supabase
+          .from("tournaments")
+          .select("id, name, sport")
+          .eq("id", matchData.tournament_id)
+          .single()
+      : Promise.resolve({ data: null, error: null }),
+    matchData.entry1_id || matchData.entry2_id
+      ? supabase
+          .from("entries")
+          .select("id, player_id, team_id")
+          .in(
+            "id",
+            [matchData.entry1_id, matchData.entry2_id].filter(Boolean) as string[]
+          )
+      : Promise.resolve({ data: [], error: null }),
+    matchData.court_id
+      ? supabase
+          .from("courts")
+          .select("id, court_name")
+          .eq("id", matchData.court_id)
+          .single()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  const tournament = tournamentResult.data as { id: string; name: string; sport: string } | null;
+  const entries = (entriesResult.data || []) as Array<{
+    id: string;
+    player_id: string | null;
+    team_id: string | null;
+  }>;
+  const court = courtResult.data as { id: string; court_name: string } | null;
+
+  // Fetch players and teams
+  const playerIds = entries.map((e) => e.player_id).filter(Boolean) as string[];
+  const teamIds = entries.map((e) => e.team_id).filter(Boolean) as string[];
+
+  const [playersResult, teamsResult] = await Promise.all([
+    playerIds.length > 0
+      ? supabase
+          .from("players")
+          .select("id, full_name")
+          .in("id", playerIds)
+      : Promise.resolve({ data: [], error: null }),
+    teamIds.length > 0
+      ? supabase
+          .from("teams")
+          .select("id, team_name")
+          .in("id", teamIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const players = (playersResult.data || []) as Array<{ id: string; full_name: string }>;
+  const teams = (teamsResult.data || []) as Array<{ id: string; team_name: string }>;
+
+  const entryMap = new Map(entries.map((e) => [e.id, e]));
+  const playerMap = new Map(players.map((p) => [p.id, p.full_name]));
+  const teamMap = new Map(teams.map((t) => [t.id, t.team_name]));
+
+  // Get umpire name
+  const { data: umpireData } = await supabase
+    .from("umpires")
+    .select("full_name")
+    .eq("id", umpireId)
+    .single();
+
+  let entry1Name: string | null = null;
+  let entry2Name: string | null = null;
+
+  if (matchData.entry1_id) {
+    const entry = entryMap.get(matchData.entry1_id);
+    if (entry) {
+      if (entry.player_id) {
+        entry1Name = playerMap.get(entry.player_id) || `Player ${matchData.entry1_id.slice(0, 8)}`;
+      } else if (entry.team_id) {
+        entry1Name = teamMap.get(entry.team_id) || `Team ${matchData.entry1_id.slice(0, 8)}`;
+      }
+    }
+  }
+
+  if (matchData.entry2_id) {
+    const entry = entryMap.get(matchData.entry2_id);
+    if (entry) {
+      if (entry.player_id) {
+        entry2Name = playerMap.get(entry.player_id) || `Player ${matchData.entry2_id.slice(0, 8)}`;
+      } else if (entry.team_id) {
+        entry2Name = teamMap.get(entry.team_id) || `Team ${matchData.entry2_id.slice(0, 8)}`;
+      }
+    }
+  }
+
+  return {
+    id: matchData.id,
+    tournament_id: matchData.tournament_id,
+    round: matchData.round,
+    match_order: matchData.match_order,
+    entry1_id: matchData.entry1_id,
+    entry2_id: matchData.entry2_id,
+    entry1_name: entry1Name,
+    entry2_name: entry2Name,
+    entry1_club_name: null,
+    entry2_club_name: null,
+    court_id: matchData.court_id,
+    court_name: court?.court_name || null,
+    umpire_id: matchData.umpire_id,
+    umpire_name: umpireData?.full_name || "",
+    scheduled_time: matchData.scheduled_time,
+    duration_minutes: matchData.duration_minutes,
+    status: matchData.is_completed ? "completed" : "scheduled",
+    winner_entry_id: matchData.winner_entry_id,
+    is_completed: matchData.is_completed,
+    match_code: matchData.match_code,
+    code_valid: matchData.code_valid,
+    actual_start_time: matchData.actual_start_time,
+    awaiting_result: matchData.awaiting_result || null,
+  };
+};
 
 /**
  * Validate match code
@@ -170,11 +306,11 @@ export const submitMatchScore = async (
 export const getUmpireMatchesByLicense = async (
   licenseNo: string
 ): Promise<UmpireWithMatches> => {
-  // First, find the umpire by license_no
+  // First, find the umpire by license_no with all profile fields
   console.log(`Looking up umpire with license_no: ${licenseNo}`);
   const { data: umpireData, error: umpireError } = await supabase
     .from("umpires")
-    .select("id, full_name, license_no")
+    .select("*")
     .eq("license_no", licenseNo)
     .single();
 
@@ -403,11 +539,7 @@ export const getUmpireMatchesByLicense = async (
   });
 
   return {
-    umpire: {
-      id: umpireData.id,
-      full_name: umpireData.full_name,
-      license_no: umpireData.license_no,
-    },
+    umpire: umpireData as Umpire,
     matches: bracketMatches,
     tournamentNames: tournamentNames,
     tournamentSports: tournamentSports,

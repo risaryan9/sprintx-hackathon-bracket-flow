@@ -3,29 +3,35 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Loader2,
-  Eye,
-  EyeOff,
+  Check,
+  Play,
+  Clock,
   Calendar,
   MapPin,
   Trophy,
   User,
-  Lock,
-  Check,
-  Play,
-  Clock,
+  Mail,
+  Phone,
+  Award,
+  Briefcase,
+  FileText,
+  Search,
+  AlertCircle,
+  Gavel,
 } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   getUmpireMatchesByLicense,
   validateMatchCode,
   submitMatchScore,
+  getMatchByCode,
   MatchScoreInput,
 } from "@/services/umpires";
 import { startMatch } from "@/services/matches";
@@ -41,15 +47,14 @@ const UmpireDashboard = () => {
   const { toast } = useToast();
   const [licenseNo, setLicenseNo] = useState("");
   const [submittedLicenseNo, setSubmittedLicenseNo] = useState<string | null>(null);
-  const [revealedCodes, setRevealedCodes] = useState<Set<string>>(new Set());
-  const [matchCodeInputs, setMatchCodeInputs] = useState<Record<string, string>>({});
-  const [validatedMatches, setValidatedMatches] = useState<Set<string>>(new Set());
-  const [validatingMatchId, setValidatingMatchId] = useState<string | null>(null);
-  const [codeErrors, setCodeErrors] = useState<Record<string, string>>({});
+  const [matchCode, setMatchCode] = useState("");
+  const [validatedMatch, setValidatedMatch] = useState<BracketMatch | null>(null);
+  const [validatingMatchCode, setValidatingMatchCode] = useState(false);
+  const [matchCodeError, setMatchCodeError] = useState<string | null>(null);
   const [startedMatches, setStartedMatches] = useState<Set<string>>(new Set());
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data: umpireData, isLoading, isError, error } = useQuery({
     queryKey: ["umpire-matches", submittedLicenseNo],
     queryFn: () => getUmpireMatchesByLicense(submittedLicenseNo!),
     enabled: !!submittedLicenseNo,
@@ -57,34 +62,30 @@ const UmpireDashboard = () => {
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
-  // Update startedMatches state when data is loaded based on actual_start_time
+  // Update startedMatches state when validated match is loaded
   useEffect(() => {
-    if (data?.matches) {
-      const newStartedMatches = new Set<string>();
-      data.matches.forEach((match) => {
-        if (match.actual_start_time) {
-          newStartedMatches.add(match.id);
-        }
-      });
-      setStartedMatches(newStartedMatches);
+    if (validatedMatch?.actual_start_time) {
+      setStartedMatches((prev) => new Set(prev).add(validatedMatch.id));
     }
-  }, [data]);
+  }, [validatedMatch]);
 
   // Auto-update idle status and refresh time every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentTime(new Date());
-      // Auto-update idle status when match duration ends
       if (submittedLicenseNo) {
         autoUpdateIdleStatus().then(() => {
-          // Refresh match data after updating idle status
           queryClient.invalidateQueries({ queryKey: ["umpire-matches", submittedLicenseNo] });
+          if (validatedMatch) {
+            // Refresh validated match
+            handleMatchCodeSubmit(matchCode);
+          }
         });
       }
     }, 30000); // Every 30 seconds
 
     return () => clearInterval(interval);
-  }, [submittedLicenseNo, queryClient]);
+  }, [submittedLicenseNo, queryClient, validatedMatch, matchCode]);
 
   // Calculate remaining time for a match
   const calculateRemainingTime = (match: BracketMatch): { minutesRemaining: number | null; isExpired: boolean } => {
@@ -93,31 +94,14 @@ const UmpireDashboard = () => {
     }
 
     try {
-      // CRITICAL: Parse timestamp as UTC using utility function
-      // This ensures database timestamps are correctly interpreted as UTC (not IST/local time)
       const startTime = parseAsUTC(match.actual_start_time);
       
       if (!startTime) {
-        console.error("Invalid start time in calculateRemainingTime:", match.actual_start_time);
         return { minutesRemaining: null, isExpired: false };
       }
 
-      // Calculate end time (in UTC milliseconds)
       const endTime = new Date(startTime.getTime() + match.duration_minutes * 60 * 1000);
-      
-      // Compare UTC timestamps (milliseconds since epoch are timezone-independent)
       const timeRemainingMs = endTime.getTime() - currentTime.getTime();
-      
-      // Debug log to verify UTC parsing
-      console.log("Time calculation (UTC):", {
-        dbTimestamp: match.actual_start_time,
-        startTimeUTC: startTime.toISOString(),
-        currentTimeUTC: currentTime.toISOString(),
-        endTimeUTC: endTime.toISOString(),
-        timeRemainingMs,
-        timeRemainingMinutes: Math.ceil(timeRemainingMs / 60000),
-        timeRemainingFormatted: formatTimeRemaining(Math.ceil(timeRemainingMs / 60000)),
-      });
       
       if (timeRemainingMs <= 0) {
         return { minutesRemaining: 0, isExpired: true };
@@ -150,24 +134,51 @@ const UmpireDashboard = () => {
     e.preventDefault();
     if (licenseNo.trim()) {
       setSubmittedLicenseNo(licenseNo.trim());
-      setRevealedCodes(new Set()); // Reset revealed codes on new search
-      setValidatedMatches(new Set()); // Reset validated matches
-      setMatchCodeInputs({}); // Reset match code inputs
-      setCodeErrors({}); // Reset errors
-      setStartedMatches(new Set()); // Reset started matches
+      setMatchCode("");
+      setValidatedMatch(null);
+      setMatchCodeError(null);
+      setStartedMatches(new Set());
     }
   };
 
-  const toggleRevealCode = (matchId: string) => {
-    setRevealedCodes((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(matchId)) {
-        newSet.delete(matchId);
-      } else {
-        newSet.add(matchId);
+  const handleMatchCodeSubmit = async (code: string) => {
+    if (!code.trim() || !umpireData) return;
+
+    setValidatingMatchCode(true);
+    setMatchCodeError(null);
+
+    try {
+      // Get match by code and verify it's assigned to this umpire
+      const match = await getMatchByCode(code.trim(), umpireData.umpire.id);
+      
+      if (!match) {
+        setMatchCodeError("Match code not found or not assigned to you.");
+        setValidatedMatch(null);
+        return;
       }
-      return newSet;
-    });
+
+      // Validate the match code
+      const isValid = await validateMatchCode(match.id, code.trim());
+      
+      if (isValid) {
+        setValidatedMatch(match);
+        setMatchCodeError(null);
+        toast({
+          title: "Match code validated",
+          description: "You can now manage the match.",
+        });
+      } else {
+        setMatchCodeError("Invalid match code. Please try again.");
+        setValidatedMatch(null);
+      }
+    } catch (err) {
+      setMatchCodeError(
+        err instanceof Error ? err.message : "Failed to validate match code."
+      );
+      setValidatedMatch(null);
+    } finally {
+      setValidatingMatchCode(false);
+    }
   };
 
   const formatTime = (timeStr: string | null) => {
@@ -180,79 +191,32 @@ const UmpireDashboard = () => {
   };
 
   const getTournamentName = (tournamentId: string | null) => {
-    if (!tournamentId || !data) return "Unknown Tournament";
-    return data.tournamentNames[tournamentId] || `Tournament ${tournamentId.slice(0, 8)}`;
+    if (!tournamentId || !umpireData) return "Unknown Tournament";
+    return umpireData.tournamentNames[tournamentId] || `Tournament ${tournamentId.slice(0, 8)}`;
   };
 
   const getTournamentSport = (tournamentId: string | null) => {
-    if (!tournamentId || !data) return "";
-    return data.tournamentSports[tournamentId] || "";
-  };
-
-  const handleMatchCodeSubmit = async (matchId: string, matchCode: string) => {
-    setValidatingMatchId(matchId);
-    setCodeErrors({ ...codeErrors, [matchId]: "" });
-
-    try {
-      const isValid = await validateMatchCode(matchId, matchCode);
-      if (isValid) {
-        setValidatedMatches((prev) => new Set(prev).add(matchId));
-        setCodeErrors((prev) => {
-          const next = { ...prev };
-          delete next[matchId];
-          return next;
-        });
-        toast({
-          title: "Match code validated",
-          description: "You can now enter match results.",
-        });
-      } else {
-        setCodeErrors((prev) => ({
-          ...prev,
-          [matchId]: "Incorrect match code. Please try again.",
-        }));
-      }
-    } catch (err) {
-      setCodeErrors((prev) => ({
-        ...prev,
-        [matchId]:
-          err instanceof Error
-            ? err.message
-            : "Failed to validate match code.",
-      }));
-    } finally {
-      setValidatingMatchId(null);
-    }
+    if (!tournamentId || !umpireData) return "";
+    return umpireData.tournamentSports[tournamentId] || "";
   };
 
   const handleScoreSubmit = async (matchId: string, scoreInput: MatchScoreInput) => {
-    const match = data?.matches.find((m) => m.id === matchId);
-    if (!match) return;
+    if (!validatedMatch) return;
 
     try {
       await submitMatchScore(
         matchId,
-        match.entry1_id,
-        match.entry2_id,
+        validatedMatch.entry1_id,
+        validatedMatch.entry2_id,
         scoreInput
       );
 
-      // Refresh matches
-      queryClient.invalidateQueries({
-        queryKey: ["umpire-matches", submittedLicenseNo],
-      });
-
-      // Clear validation state for this match
-      setValidatedMatches((prev) => {
-        const next = new Set(prev);
-        next.delete(matchId);
-        return next;
-      });
-      setMatchCodeInputs((prev) => {
-        const next = { ...prev };
-        delete next[matchId];
-        return next;
-      });
+      // Refresh match
+      await handleMatchCodeSubmit(matchCode);
+      
+      // Clear validated match
+      setValidatedMatch(null);
+      setMatchCode("");
 
       toast({
         title: "Match completed",
@@ -263,17 +227,9 @@ const UmpireDashboard = () => {
     }
   };
 
-  const handleScoreCancel = (matchId: string) => {
-    setValidatedMatches((prev) => {
-      const next = new Set(prev);
-      next.delete(matchId);
-      return next;
-    });
-    setMatchCodeInputs((prev) => {
-      const next = { ...prev };
-      next[matchId] = "";
-      return next;
-    });
+  const handleScoreCancel = () => {
+    setValidatedMatch(null);
+    setMatchCode("");
   };
 
   const handleStartMatch = async (matchId: string) => {
@@ -281,14 +237,12 @@ const UmpireDashboard = () => {
       await startMatch(matchId);
       setStartedMatches((prev) => new Set(prev).add(matchId));
       
-      // Refresh match data to reflect the updated actual_start_time
-      queryClient.invalidateQueries({
-        queryKey: ["umpire-matches", submittedLicenseNo],
-      });
+      // Refresh validated match
+      await handleMatchCodeSubmit(matchCode);
       
       toast({
         title: "Match Started",
-        description: "Match timer has been started and resources marked as busy.",
+        description: "Match timer has been started.",
       });
     } catch (err) {
       toast({
@@ -299,63 +253,78 @@ const UmpireDashboard = () => {
     }
   };
 
+  // Parse sports_expertise JSON if it's a string
+  const parseSportsExpertise = (expertise: string | null): string[] => {
+    if (!expertise) return [];
+    try {
+      if (typeof expertise === 'string' && expertise.startsWith('[')) {
+        return JSON.parse(expertise);
+      }
+      return expertise.split(',').map(s => s.trim());
+    } catch {
+      return expertise.split(',').map(s => s.trim());
+    }
+  };
+
   return (
     <div className="min-h-screen bg-black text-foreground">
       <Navigation />
       <main className="pt-32 pb-20">
         <section className="container px-4">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-7xl mx-auto">
             {/* Header */}
             <div className="text-center mb-8">
               <h1 className="text-4xl md:text-5xl font-semibold mb-4">
-                Umpire Match Dashboard
+                Umpire Dashboard
               </h1>
               <p className="text-muted-foreground text-lg">
-                Enter your license number to view all upcoming matches assigned to you
+                Enter your license number to access your dashboard
               </p>
             </div>
 
             {/* License Input Form */}
-            <Card className="glass border-white/10 mb-8">
-              <CardContent className="p-6">
-                <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-4">
-                  <div className="flex-1">
-                    <Input
-                      type="text"
-                      placeholder="Enter your license number"
-                      value={licenseNo}
-                      onChange={(e) => setLicenseNo(e.target.value)}
-                      className="bg-black/40 border-white/10 h-12"
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    className="button-gradient h-12 px-8"
-                    disabled={!licenseNo.trim() || isLoading}
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Loading...
-                      </>
-                    ) : (
-                      "View Matches"
-                    )}
-                  </Button>
-                </form>
+            {!submittedLicenseNo && (
+              <Card className="glass border-white/10 mb-8 max-w-2xl mx-auto">
+                <CardContent className="p-6">
+                  <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-4">
+                    <div className="flex-1">
+                      <Input
+                        type="text"
+                        placeholder="Enter your license number (e.g., IND-UMP-5099)"
+                        value={licenseNo}
+                        onChange={(e) => setLicenseNo(e.target.value)}
+                        className="bg-black/40 border-white/10 h-12"
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      className="button-gradient h-12 px-8"
+                      disabled={!licenseNo.trim() || isLoading}
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Loading...
+                        </>
+                      ) : (
+                        "Access Dashboard"
+                      )}
+                    </Button>
+                  </form>
 
-                {/* Error Message */}
-                {isError && submittedLicenseNo && (
-                  <Alert variant="destructive" className="mt-4 bg-red-500/10 border-red-500/30">
-                    <AlertDescription className="text-red-400">
-                      {error instanceof Error
-                        ? error.message
-                        : "An error occurred while fetching your matches."}
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </CardContent>
-            </Card>
+                  {/* Error Message */}
+                  {isError && submittedLicenseNo && (
+                    <Alert variant="destructive" className="mt-4 bg-red-500/10 border-red-500/30">
+                      <AlertDescription className="text-red-400">
+                        {error instanceof Error
+                          ? error.message
+                          : "An error occurred while fetching your data."}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Loading State */}
             {isLoading && submittedLicenseNo && (
@@ -364,310 +333,349 @@ const UmpireDashboard = () => {
               </div>
             )}
 
-            {/* Matches Display */}
-            {data && !isLoading && (
-              <>
-                {/* Umpire Info */}
-                <Card className="glass border-white/10 mb-6">
-                  <CardContent className="p-6">
-                    <div className="flex items-center gap-3">
-                      <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
-                        <User className="h-6 w-6 text-primary" />
+            {/* Dashboard - Two Column Layout */}
+            {umpireData && !isLoading && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Left Column - Umpire Profile */}
+                <div className="lg:col-span-1">
+                  <Card className="glass border-white/10 sticky top-24">
+                    <CardHeader>
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center">
+                          <Gavel className="h-8 w-8 text-primary" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-xl">{umpireData.umpire.full_name}</CardTitle>
+                          <p className="text-sm text-muted-foreground">
+                            {umpireData.umpire.license_no}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h2 className="text-xl font-semibold">{data.umpire.full_name}</h2>
-                        <p className="text-sm text-muted-foreground">
-                          License: {data.umpire.license_no}
-                        </p>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Contact Info */}
+                      <div className="space-y-2">
+                        {umpireData.umpire.email && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Mail className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">{umpireData.umpire.email}</span>
+                          </div>
+                        )}
+                        {umpireData.umpire.contact && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Phone className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">{umpireData.umpire.contact}</span>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
 
-                {/* Matches List */}
-                {data.matches.length === 0 ? (
-                  <Card className="glass border-white/10">
-                    <CardContent className="p-12 text-center">
-                      <p className="text-lg font-semibold mb-2">No upcoming matches assigned</p>
-                      <p className="text-muted-foreground">
-                        You don't have any upcoming matches at the moment.
-                      </p>
+                      {/* Profile Details */}
+                      <div className="space-y-3 pt-4 border-t border-white/10">
+                        {umpireData.umpire.age && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Age:</span>
+                            <span className="font-medium">{umpireData.umpire.age} years</span>
+                          </div>
+                        )}
+                        {umpireData.umpire.gender && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Gender:</span>
+                            <span className="font-medium capitalize">{umpireData.umpire.gender}</span>
+                          </div>
+                        )}
+                        {umpireData.umpire.experience_years && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Experience:</span>
+                            <span className="font-medium">{umpireData.umpire.experience_years} years</span>
+                          </div>
+                        )}
+                        {umpireData.umpire.certification_level && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Award className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">Certification:</span>
+                            <Badge className="bg-primary/20 text-primary border-primary/30 text-xs capitalize">
+                              {umpireData.umpire.certification_level}
+                            </Badge>
+                          </div>
+                        )}
+                        {umpireData.umpire.association && (
+                          <div className="flex items-start gap-2 text-sm">
+                            <Briefcase className="h-4 w-4 text-muted-foreground mt-0.5" />
+                            <div>
+                              <span className="text-muted-foreground">Association:</span>
+                              <p className="font-medium">{umpireData.umpire.association}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Sports Expertise */}
+                      {umpireData.umpire.sports_expertise && (
+                        <div className="pt-4 border-t border-white/10">
+                          <div className="flex items-center gap-2 mb-2 text-sm">
+                            <Trophy className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground font-medium">Sports Expertise:</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {parseSportsExpertise(umpireData.umpire.sports_expertise).map((sport, idx) => (
+                              <Badge key={idx} variant="outline" className="text-xs border-primary/30 bg-primary/10 text-primary">
+                                {sport}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Bio */}
+                      {umpireData.umpire.bio && (
+                        <div className="pt-4 border-t border-white/10">
+                          <div className="flex items-center gap-2 mb-2 text-sm">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground font-medium">Bio:</span>
+                          </div>
+                          <p className="text-sm text-foreground/80">{umpireData.umpire.bio}</p>
+                        </div>
+                      )}
+
+                      {/* Status */}
+                      <div className="pt-4 border-t border-white/10">
+                        <Badge
+                          variant="outline"
+                          className={
+                            umpireData.umpire.is_idle
+                              ? "bg-green-500/20 text-green-400 border-green-500/50"
+                              : "bg-yellow-500/20 text-yellow-400 border-yellow-500/50"
+                          }
+                        >
+                          {umpireData.umpire.is_idle ? "Available" : "Busy"}
+                        </Badge>
+                      </div>
                     </CardContent>
                   </Card>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-2xl font-semibold">Upcoming Matches</h2>
-                      <Badge
-                        variant="outline"
-                        className="border-white/20 bg-white/5 text-white/80"
-                      >
-                        {data.matches.length} {data.matches.length === 1 ? "match" : "matches"}
-                      </Badge>
-                    </div>
+                </div>
 
-                    {data.matches.map((match) => {
-                      const tournamentName = getTournamentName(match.tournament_id);
-                      const isCodeRevealed = revealedCodes.has(match.id);
+                {/* Right Column - Match Code Search */}
+                <div className="lg:col-span-2 space-y-6">
+                  {/* Match Code Input */}
+                  <Card className="glass border-white/10">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Search className="h-5 w-5 text-primary" />
+                        Enter Match Code
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="match-code" className="text-sm font-medium mb-2 block">
+                            Match Code
+                          </Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="match-code"
+                              type="text"
+                              placeholder="Enter match code"
+                              value={matchCode}
+                              onChange={(e) => {
+                                setMatchCode(e.target.value);
+                                setMatchCodeError(null);
+                              }}
+                              disabled={validatingMatchCode}
+                              className="flex-1 bg-black/40 border-white/10 font-mono"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && matchCode.trim()) {
+                                  handleMatchCodeSubmit(matchCode);
+                                }
+                              }}
+                            />
+                            <Button
+                              onClick={() => handleMatchCodeSubmit(matchCode)}
+                              disabled={!matchCode.trim() || validatingMatchCode}
+                              className="button-gradient"
+                            >
+                              {validatingMatchCode ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <Check className="h-4 w-4 mr-2" />
+                                  Validate
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
 
-                      return (
-                        <Card
-                          key={match.id}
-                          className="glass border-white/10 hover:border-primary/30 transition-all duration-200 hover:shadow-lg hover:shadow-primary/10"
-                        >
-                          <CardContent className="p-6">
-                            {/* Match Header */}
-                            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <Trophy className="h-4 w-4 text-primary" />
-                                  <span className="text-sm font-medium text-primary">
-                                    {tournamentName}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-xl font-semibold text-foreground">
-                                    {match.entry1_name || "TBD"}
-                                  </span>
-                                  <span className="text-muted-foreground px-2 font-medium">vs</span>
-                                  <span className="text-xl font-semibold text-foreground">
-                                    {match.entry2_name || "BYE"}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {match.round && (
-                                  <Badge
-                                    variant="outline"
-                                    className="border-primary/30 bg-primary/10 text-primary text-xs"
-                                  >
-                                    {match.round}
-                                  </Badge>
-                                )}
-                                {/* Match Status Badge */}
-                                {match.is_completed ? (
-                                  <Badge
-                                    variant="outline"
-                                    className="border-green-500/30 bg-green-500/10 text-green-400 text-xs"
-                                  >
-                                    Completed
-                                  </Badge>
-                                ) : match.awaiting_result ? (
-                                  <Badge
-                                    variant="outline"
-                                    className="border-orange-500/30 bg-orange-500/10 text-orange-400 text-xs"
-                                  >
-                                    Awaiting Result
-                                  </Badge>
-                                ) : match.actual_start_time ? (
-                                  <Badge
-                                    variant="outline"
-                                    className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs"
-                                  >
-                                    Running
-                                  </Badge>
-                                ) : (
-                                  <Badge
-                                    variant="outline"
-                                    className="border-yellow-500/30 bg-yellow-500/10 text-yellow-400 text-xs"
-                                  >
-                                    Upcoming
-                                  </Badge>
-                                )}
-                                {/* Time Remaining for Running Matches */}
-                                {match.actual_start_time && !match.is_completed && !match.awaiting_result && match.duration_minutes && (
-                                  <Badge
-                                    variant="outline"
-                                    className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs"
-                                  >
-                                    <Clock className="h-3 w-3 mr-1" />
-                                    {(() => {
-                                      const { minutesRemaining } = calculateRemainingTime(match);
-                                      if (minutesRemaining !== null && minutesRemaining > 0) {
-                                        return formatTimeRemaining(minutesRemaining);
-                                      }
-                                      return "Time expired";
-                                    })()}
-                                  </Badge>
-                                )}
-                              </div>
+                        {matchCodeError && (
+                          <Alert variant="destructive" className="bg-red-500/10 border-red-500/30">
+                            <AlertCircle className="h-4 w-4 text-red-400" />
+                            <AlertDescription className="text-red-400 text-sm">
+                              {matchCodeError}
+                            </AlertDescription>
+                          </Alert>
+                        )}
+
+                        {validatedMatch && (
+                          <Alert className="bg-green-500/10 border-green-500/30">
+                            <Check className="h-4 w-4 text-green-400" />
+                            <AlertTitle className="text-green-400">Match Code Verified</AlertTitle>
+                            <AlertDescription className="text-green-300 text-sm">
+                              You can now manage this match.
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Validated Match Display */}
+                  {validatedMatch && (
+                    <Card className="glass border-primary/30">
+                      <CardContent className="p-6">
+                        {/* Match Header */}
+                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Trophy className="h-4 w-4 text-primary" />
+                              <span className="text-sm font-medium text-primary">
+                                {getTournamentName(validatedMatch.tournament_id)}
+                              </span>
                             </div>
-
-                            {/* Match Details */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2 text-sm">
-                                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                                  <span className="text-muted-foreground font-medium">
-                                    Scheduled Time:
-                                  </span>
-                                  <span className="text-foreground">
-                                    {formatTime(match.scheduled_time)}
-                                  </span>
-                                </div>
-                                {match.court_name && (
-                                  <div className="flex items-center gap-2 text-sm">
-                                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                                    <span className="text-muted-foreground font-medium">Court:</span>
-                                    <span className="text-primary font-medium">
-                                      {match.court_name}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              <div className="space-y-2">
-                                {match.match_order && (
-                                  <div className="text-sm">
-                                    <span className="text-muted-foreground font-medium">
-                                      Match Order:
-                                    </span>
-                                    <span className="text-foreground ml-2">
-                                      {match.match_order}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-2xl font-semibold text-foreground">
+                                {validatedMatch.entry1_name || "TBD"}
+                              </span>
+                              <span className="text-muted-foreground px-2 font-medium">vs</span>
+                              <span className="text-2xl font-semibold text-foreground">
+                                {validatedMatch.entry2_name || "BYE"}
+                              </span>
                             </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {validatedMatch.round && (
+                              <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary text-xs">
+                                {validatedMatch.round}
+                              </Badge>
+                            )}
+                            {validatedMatch.is_completed ? (
+                              <Badge variant="outline" className="border-green-500/30 bg-green-500/10 text-green-400 text-xs">
+                                Completed
+                              </Badge>
+                            ) : validatedMatch.actual_start_time ? (
+                              <Badge variant="outline" className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs">
+                                Running
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="border-yellow-500/30 bg-yellow-500/10 text-yellow-400 text-xs">
+                                Upcoming
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
 
-                            {/* Match Code Section */}
-                            {match.match_code && !validatedMatches.has(match.id) && (
-                              <div className="pt-4 border-t border-white/10">
-                                <div className="space-y-3">
-                                  <Label htmlFor={`match-code-${match.id}`} className="text-sm font-medium text-muted-foreground">
-                                    Enter Match Code to Edit:
-                                  </Label>
-                                  <div className="flex gap-2">
-                                    <Input
-                                      id={`match-code-${match.id}`}
-                                      type="text"
-                                      placeholder="Enter match code"
-                                      value={matchCodeInputs[match.id] || ""}
-                                      onChange={(e) =>
-                                        setMatchCodeInputs({
-                                          ...matchCodeInputs,
-                                          [match.id]: e.target.value,
-                                        })
-                                      }
-                                      disabled={validatingMatchId === match.id}
-                                      className="flex-1 bg-black/40 border-white/10 font-mono"
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter" && matchCodeInputs[match.id]) {
-                                          handleMatchCodeSubmit(
-                                            match.id,
-                                            matchCodeInputs[match.id]
-                                          );
-                                        }
-                                      }}
-                                    />
-                                    <Button
-                                      onClick={() =>
-                                        handleMatchCodeSubmit(
-                                          match.id,
-                                          matchCodeInputs[match.id] || ""
-                                        )
-                                      }
-                                      disabled={
-                                        !matchCodeInputs[match.id]?.trim() ||
-                                        validatingMatchId === match.id
-                                      }
-                                      className="button-gradient"
-                                    >
-                                      {validatingMatchId === match.id ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <>
-                                          <Lock className="h-4 w-4 mr-2" />
-                                          Verify
-                                        </>
-                                      )}
-                                    </Button>
-                                  </div>
-                                  {codeErrors[match.id] && (
-                                    <Alert
-                                      variant="destructive"
-                                      className="bg-red-500/10 border-red-500/30"
-                                    >
-                                      <AlertDescription className="text-red-400 text-sm">
-                                        {codeErrors[match.id]}
-                                      </AlertDescription>
-                                    </Alert>
-                                  )}
-                                </div>
+                        {/* Match Details */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-sm">
+                              <Calendar className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-muted-foreground font-medium">Scheduled Time:</span>
+                              <span className="text-foreground">{formatTime(validatedMatch.scheduled_time)}</span>
+                            </div>
+                            {validatedMatch.court_name && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <MapPin className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-muted-foreground font-medium">Court:</span>
+                                <span className="text-primary font-medium">{validatedMatch.court_name}</span>
                               </div>
                             )}
+                          </div>
+                          {validatedMatch.actual_start_time && validatedMatch.duration_minutes && (
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground font-medium">Time Remaining:</span>
+                              <Badge variant="outline" className="border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs">
+                                {(() => {
+                                  const { minutesRemaining } = calculateRemainingTime(validatedMatch);
+                                  return minutesRemaining !== null && minutesRemaining > 0
+                                    ? formatTimeRemaining(minutesRemaining)
+                                    : "Time expired";
+                                })()}
+                              </Badge>
+                            </div>
+                          )}
+                        </div>
 
-                            {/* Validated State */}
-                            {validatedMatches.has(match.id) && (
-                              <div className="pt-4 border-t border-primary/30 space-y-4">
-                                <div className="flex items-center gap-2 text-sm text-primary">
-                                  <Check className="h-4 w-4" />
-                                  <span className="font-medium">
-                                    Match code verified. You can now manage the match.
-                                  </span>
-                                </div>
+                        {/* Match Timer - Show if match is started */}
+                        {validatedMatch.actual_start_time &&
+                          validatedMatch.duration_minutes &&
+                          validatedMatch.duration_minutes > 0 && (
+                            <div className="mb-6">
+                              <MatchTimer
+                                durationMinutes={validatedMatch.duration_minutes}
+                                actualStartTime={validatedMatch.actual_start_time || null}
+                                autoStart={true}
+                                onComplete={() => {
+                                  toast({
+                                    title: "Match Time Expired",
+                                    description: "The match duration has been reached. Please submit the result.",
+                                  });
+                                  handleMatchCodeSubmit(matchCode);
+                                }}
+                              />
+                            </div>
+                          )}
 
-                                {/* Awaiting Result Status */}
-                                {match.awaiting_result && !match.is_completed && (
-                                  <Alert className="bg-yellow-500/10 border-yellow-500/30">
-                                    <AlertDescription className="text-yellow-400 font-medium">
-                                      ⏰ Match duration has ended. Please submit the match result.
-                                    </AlertDescription>
-                                  </Alert>
-                                )}
+                        {/* Start Match Button - Show if not started */}
+                        {!validatedMatch.actual_start_time &&
+                          validatedMatch.duration_minutes &&
+                          validatedMatch.duration_minutes > 0 &&
+                          !validatedMatch.is_completed && (
+                            <div className="flex justify-center mb-6">
+                              <Button onClick={() => handleStartMatch(validatedMatch.id)} className="button-gradient">
+                                <Play className="h-4 w-4 mr-2" />
+                                Start Match
+                              </Button>
+                            </div>
+                          )}
 
-                                {/* Match Timer - Show if match is started */}
-                                {(match.actual_start_time || startedMatches.has(match.id)) &&
-                                  match.duration_minutes &&
-                                  match.duration_minutes > 0 && (
-                                    <MatchTimer
-                                      durationMinutes={match.duration_minutes}
-                                      actualStartTime={match.actual_start_time || null}
-                                      autoStart={true}
-                                      onComplete={() => {
-                                        toast({
-                                          title: "Match Time Expired",
-                                          description:
-                                            "The match duration has been reached. Please submit the result.",
-                                        });
-                                        // Refresh to show awaiting result status
-                                        queryClient.invalidateQueries({ queryKey: ["umpire-matches", submittedLicenseNo] });
-                                      }}
-                                    />
-                                  )}
+                        {/* Scoring Interface */}
+                        <div className="pt-6 border-t border-white/10">
+                          <MatchScoring
+                            match={validatedMatch}
+                            sport={getTournamentSport(validatedMatch.tournament_id)}
+                            onSubmit={(scoreInput) => handleScoreSubmit(validatedMatch.id, scoreInput)}
+                            onCancel={handleScoreCancel}
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
-                                {/* Start Match Button - Show if not started */}
-                                {!match.actual_start_time &&
-                                  match.duration_minutes &&
-                                  match.duration_minutes > 0 && (
-                                    <div className="flex justify-center">
-                                      <Button
-                                        onClick={() => handleStartMatch(match.id)}
-                                        className="button-gradient"
-                                      >
-                                        <Play className="h-4 w-4 mr-2" />
-                                        Start Match
-                                      </Button>
-                                    </div>
-                                  )}
+                  {/* No Match Message */}
+                  {!validatedMatch && !matchCodeError && umpireData.matches.length > 0 && (
+                    <Card className="glass border-white/10">
+                      <CardContent className="p-12 text-center">
+                        <p className="text-lg font-semibold mb-2">Enter a match code</p>
+                        <p className="text-muted-foreground">
+                          You have {umpireData.matches.length} assigned match{umpireData.matches.length > 1 ? "es" : ""}. 
+                          Enter the match code to manage it.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
 
-                                {/* Scoring Interface */}
-                                <MatchScoring
-                                  match={match}
-                                  sport={getTournamentSport(match.tournament_id)}
-                                  onSubmit={(scoreInput) =>
-                                    handleScoreSubmit(match.id, scoreInput)
-                                  }
-                                  onCancel={() => handleScoreCancel(match.id)}
-                                />
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
+                  {/* No Matches Assigned */}
+                  {!validatedMatch && umpireData.matches.length === 0 && (
+                    <Card className="glass border-white/10">
+                      <CardContent className="p-12 text-center">
+                        <p className="text-lg font-semibold mb-2">No matches assigned</p>
+                        <p className="text-muted-foreground">
+                          You don't have any assigned matches at the moment.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </section>
@@ -678,4 +686,3 @@ const UmpireDashboard = () => {
 };
 
 export default UmpireDashboard;
-
