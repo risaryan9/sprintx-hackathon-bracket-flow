@@ -10,6 +10,7 @@ import { MatchList } from "@/components/MatchList";
 import { FixtureView } from "@/components/FixtureView";
 import { TournamentBracket } from "@/components/TournamentBracket";
 import { TournamentLeaderboard } from "@/components/TournamentLeaderboard";
+import { AISummaryModal } from "@/components/AISummaryModal";
 import { getCurrentRound, areAllMatchesCompleted } from "@/services/matches";
 import { Entry } from "@/types/match";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ const TournamentManage = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [aiModeEnabled, setAiModeEnabled] = useState(false);
+  const [aiSummaryOpen, setAiSummaryOpen] = useState(false);
 
   const { data: tournament, isLoading, isError } = useQuery({
     queryKey: ["tournament", tournamentId],
@@ -714,38 +716,48 @@ const TournamentManage = () => {
                     All scheduled matches for this tournament
                   </p>
                 </div>
-                {isKnockout && currentRound && (
+                <div className="flex items-center gap-3">
                   <Button
-                    className={`${
-                      canGenerateNextRound
-                        ? "button-gradient"
-                        : "bg-gray-600/50 text-gray-400 cursor-not-allowed hover:bg-gray-600/50"
-                    }`}
-                    onClick={() => generateNextRoundMutation.mutate()}
-                    disabled={
-                      !canGenerateNextRound ||
-                      generateNextRoundMutation.isPending ||
-                      isLoadingCanGenerate ||
-                      isLoadingRound
-                    }
+                    variant="outline"
+                    onClick={() => setAiSummaryOpen(true)}
+                    className="border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/50"
                   >
-                    {generateNextRoundMutation.isPending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        Generate Next Round
-                        {currentRound && (
-                          <span className="ml-2 text-xs">
-                            ({currentRound})
-                          </span>
-                        )}
-                      </>
-                    )}
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    AI Summary
                   </Button>
-                )}
+                  {isKnockout && currentRound && (
+                    <Button
+                      className={`${
+                        canGenerateNextRound
+                          ? "button-gradient"
+                          : "bg-gray-600/50 text-gray-400 cursor-not-allowed hover:bg-gray-600/50"
+                      }`}
+                      onClick={() => generateNextRoundMutation.mutate()}
+                      disabled={
+                        !canGenerateNextRound ||
+                        generateNextRoundMutation.isPending ||
+                        isLoadingCanGenerate ||
+                        isLoadingRound
+                      }
+                    >
+                      {generateNextRoundMutation.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          Generate Next Round
+                          {currentRound && (
+                            <span className="ml-2 text-xs">
+                              ({currentRound})
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
               {isKnockout && currentRound && (
                 <div className="mb-4 text-sm text-muted-foreground">
@@ -818,6 +830,16 @@ const TournamentManage = () => {
           open={leaderboardOpen}
           onOpenChange={setLeaderboardOpen}
           tournamentName={tournament.name}
+        />
+      )}
+
+      {/* AI Summary Modal */}
+      {tournament && hasMatches && (
+        <AISummaryModal
+          open={aiSummaryOpen}
+          onOpenChange={setAiSummaryOpen}
+          matches={matches}
+          tournament={tournament}
         />
       )}
     </div>
