@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2, Gavel, MapPin, Clock } from "lucide-react";
+import { ArrowLeft, Loader2, Users, CheckCircle2, AlertCircle, User, Users2, Gavel, MapPin, Clock, Trophy } from "lucide-react";
 import Navigation from "@/components/Navigation";
 import Footer from "@/components/Footer";
 import { getTournamentById, getTournamentEntriesCount, getTournamentEntries, getTournamentCourts, getTournamentUmpires } from "@/services/tournaments";
@@ -9,6 +9,7 @@ import { getTournamentMatchesForBracket } from "@/services/bracket";
 import { MatchList } from "@/components/MatchList";
 import { FixtureView } from "@/components/FixtureView";
 import { TournamentBracket } from "@/components/TournamentBracket";
+import { TournamentLeaderboard } from "@/components/TournamentLeaderboard";
 import { getCurrentRound, areAllMatchesCompleted } from "@/services/matches";
 import { Entry } from "@/types/match";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ const TournamentManage = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
 
   const { data: tournament, isLoading, isError } = useQuery({
     queryKey: ["tournament", tournamentId],
@@ -595,6 +597,28 @@ const TournamentManage = () => {
                             </div>
                           )}
                         </div>
+
+                        {/* Tournament Leaderboard */}
+                        <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+                          <div className="flex items-center gap-3 mb-3">
+                            <Trophy className="h-4 w-4 text-primary" />
+                            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                              Leaderboard
+                            </h3>
+                          </div>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            View the current standings for  this tournament
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setLeaderboardOpen(true)}
+                            className="w-full h-9 text-sm border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/50 transition-all"
+                          >
+                            <Trophy className="h-4 w-4 mr-2" />
+                            View Leaderboard
+                          </Button>
+                        </div>
                       </div>
                     </div>
 
@@ -762,6 +786,15 @@ const TournamentManage = () => {
         )}
       </main>
       <Footer />
+      
+      {/* Tournament Leaderboard Dialog */}
+      {tournament && (
+        <TournamentLeaderboard
+          open={leaderboardOpen}
+          onOpenChange={setLeaderboardOpen}
+          tournamentName={tournament.name}
+        />
+      )}
     </div>
   );
 };
