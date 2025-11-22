@@ -3,7 +3,8 @@ import { format } from "date-fns";
 import { BracketMatch } from "@/types/bracket";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Calendar, User, Trophy, Clock } from "lucide-react";
+import { MapPin, Calendar, User, Trophy, Clock, Building2 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { parseAsUTC } from "@/utils/timestampParser";
 import { formatTimeUntilIdle } from "@/utils/idleCalculations";
@@ -227,30 +228,69 @@ export const FixtureView = ({
 
                   {/* Match Participants */}
                   <div className="pt-3 border-t border-white/10">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-foreground">
-                          {match.entry1_name || "TBD"}
-                        </span>
-                        {match.winner_entry_id === match.entry1_id && (
-                          <Trophy className="h-4 w-4 text-primary" />
-                        )}
+                    <TooltipProvider>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium text-foreground">
+                              {match.entry1_name || "TBD"}
+                            </span>
+                            {match.entry1_club_name && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="text-muted-foreground hover:text-primary transition-colors"
+                                    aria-label={`Club: ${match.entry1_club_name}`}
+                                  >
+                                    <Building2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent className="bg-black/90 border-white/10 text-white">
+                                  <p className="font-medium">{match.entry1_club_name}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
+                          {match.winner_entry_id === match.entry1_id && (
+                            <Trophy className="h-4 w-4 text-primary" />
+                          )}
+                        </div>
+                        <div className="text-center text-xs text-muted-foreground py-1">
+                          vs
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium text-foreground">
+                              {match.entry2_name || "BYE"}
+                            </span>
+                            {match.entry2_club_name && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="text-muted-foreground hover:text-primary transition-colors"
+                                    aria-label={`Club: ${match.entry2_club_name}`}
+                                  >
+                                    <Building2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent className="bg-black/90 border-white/10 text-white">
+                                  <p className="font-medium">{match.entry2_club_name}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
+                          {match.winner_entry_id === match.entry2_id && (
+                            <Trophy className="h-4 w-4 text-primary" />
+                          )}
+                        </div>
                       </div>
-                      <div className="text-center text-xs text-muted-foreground py-1">
-                        vs
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-foreground">
-                          {match.entry2_name || "BYE"}
-                        </span>
-                        {match.winner_entry_id === match.entry2_id && (
-                          <Trophy className="h-4 w-4 text-primary" />
-                        )}
-                      </div>
-                    </div>
+                    </TooltipProvider>
+                  </div>
 
-                    {/* Match Status */}
-                    <div className="mt-3 space-y-1">
+                  {/* Match Status */}
+                  <div className="mt-3 space-y-1">
                       {match.is_completed ? (
                         <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs w-full justify-center">
                           Completed
@@ -275,7 +315,6 @@ export const FixtureView = ({
                           })()}
                         </>
                       ) : null}
-                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -314,25 +353,59 @@ export const FixtureView = ({
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     {/* Match Info */}
                     <div className="flex-1 space-y-2">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg font-semibold text-foreground">
-                            {match.entry1_name || "TBD"}
-                          </span>
-                          {match.winner_entry_id === match.entry1_id && (
-                            <Trophy className="h-4 w-4 text-primary" />
-                          )}
+                      <TooltipProvider>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-semibold text-foreground">
+                              {match.entry1_name || "TBD"}
+                            </span>
+                            {match.entry1_club_name && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="text-muted-foreground hover:text-primary transition-colors"
+                                    aria-label={`Club: ${match.entry1_club_name}`}
+                                  >
+                                    <Building2 className="h-4 w-4" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent className="bg-black/90 border-white/10 text-white">
+                                  <p className="font-medium">{match.entry1_club_name}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {match.winner_entry_id === match.entry1_id && (
+                              <Trophy className="h-4 w-4 text-primary" />
+                            )}
+                          </div>
+                          <span className="text-muted-foreground px-2">vs</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-semibold text-foreground">
+                              {match.entry2_name || "BYE"}
+                            </span>
+                            {match.entry2_club_name && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="text-muted-foreground hover:text-primary transition-colors"
+                                    aria-label={`Club: ${match.entry2_club_name}`}
+                                  >
+                                    <Building2 className="h-4 w-4" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent className="bg-black/90 border-white/10 text-white">
+                                  <p className="font-medium">{match.entry2_club_name}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {match.winner_entry_id === match.entry2_id && (
+                              <Trophy className="h-4 w-4 text-primary" />
+                            )}
+                          </div>
                         </div>
-                        <span className="text-muted-foreground px-2">vs</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg font-semibold text-foreground">
-                            {match.entry2_name || "BYE"}
-                          </span>
-                          {match.winner_entry_id === match.entry2_id && (
-                            <Trophy className="h-4 w-4 text-primary" />
-                          )}
-                        </div>
-                      </div>
+                      </TooltipProvider>
 
                       <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                         {match.round && (

@@ -14,8 +14,9 @@ interface RenderSeedProps {
   rounds?: RoundProps[];
 }
 import { format } from "date-fns";
-import { MapPin, User, Trophy, Calendar, Clock } from "lucide-react";
+import { MapPin, User, Trophy, Calendar, Clock, Building2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface TournamentBracketProps {
   matches: BracketMatch[];
@@ -67,15 +68,35 @@ const CustomSeed = ({ seed, breakpoint, roundIndex, seedIndex }: RenderSeedProps
         <div className="space-y-3">
           {/* Entry 1 */}
           <div className="flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-            <SeedTeam 
-              className={`text-sm font-semibold flex-1 truncate ${
-                entry1Winner && isCompleted
-                  ? "text-primary"
-                  : "text-foreground/90"
-              }`}
-            >
-              {matchSeed.teams[0]?.name || "TBD"}
-            </SeedTeam>
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <SeedTeam 
+                className={`text-sm font-semibold flex-1 truncate ${
+                  entry1Winner && isCompleted
+                    ? "text-primary"
+                    : "text-foreground/90"
+                }`}
+              >
+                {matchSeed.teams[0]?.name || "TBD"}
+              </SeedTeam>
+              {matchSeed.teams[0]?.club_name && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+                        aria-label={`Club: ${matchSeed.teams[0]?.club_name}`}
+                      >
+                        <Building2 className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-black/90 border-white/10 text-white">
+                      <p className="font-medium">{matchSeed.teams[0]?.club_name}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
             {entry1Winner && isCompleted && (
               <Trophy className="h-4 w-4 text-primary flex-shrink-0" />
             )}
@@ -86,15 +107,35 @@ const CustomSeed = ({ seed, breakpoint, roundIndex, seedIndex }: RenderSeedProps
 
           {/* Entry 2 */}
           <div className="flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-            <SeedTeam
-              className={`text-sm font-semibold flex-1 truncate ${
-                entry2Winner && isCompleted
-                  ? "text-primary"
-                  : "text-foreground/90"
-              }`}
-            >
-              {matchSeed.teams[1]?.name || "BYE"}
-            </SeedTeam>
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <SeedTeam
+                className={`text-sm font-semibold flex-1 truncate ${
+                  entry2Winner && isCompleted
+                    ? "text-primary"
+                    : "text-foreground/90"
+                }`}
+              >
+                {matchSeed.teams[1]?.name || "BYE"}
+              </SeedTeam>
+              {matchSeed.teams[1]?.club_name && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+                        aria-label={`Club: ${matchSeed.teams[1]?.club_name}`}
+                      >
+                        <Building2 className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="bg-black/90 border-white/10 text-white">
+                      <p className="font-medium">{matchSeed.teams[1]?.club_name}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
             {entry2Winner && isCompleted && (
               <Trophy className="h-4 w-4 text-primary flex-shrink-0" />
             )}

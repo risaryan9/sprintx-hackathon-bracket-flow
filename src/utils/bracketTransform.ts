@@ -76,10 +76,12 @@ export const transformMatchesToRounds = (
         {
           name: match.entry1_name || "TBD",
           id: match.entry1_id || undefined,
+          club_name: match.entry1_club_name || undefined,
         },
         {
           name: match.entry2_name || "BYE",
           id: match.entry2_id || undefined,
+          club_name: match.entry2_club_name || undefined,
         },
       ],
       scheduled_time: match.scheduled_time,
