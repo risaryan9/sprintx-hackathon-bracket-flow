@@ -8,6 +8,7 @@ import TestimonialsSection from "@/components/TestimonialsSection";
 import Footer from "@/components/Footer";
 import { TextGenerateEffect } from "@/components/ui/text-generate-effect";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { ParticleBackground } from "@/components/ParticleBackground";
 
 const Index = () => {
   const location = useLocation();
@@ -54,7 +55,8 @@ const Index = () => {
   }, [location, navigate]);
 
   return (
-    <div className="min-h-screen bg-black text-foreground">
+    <div className="min-h-screen bg-black text-foreground relative overflow-hidden">
+      <ParticleBackground />
       <Navigation />
       
       {/* Hero Section */}
